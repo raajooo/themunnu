@@ -20,18 +20,31 @@ const __dirname = path.dirname(__filename);
 // Initialize Firebase Admin
 if (!admin.apps.length) {
   try {
-    // Attempt to use service account from env, otherwise use default
-    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
-      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) 
-      : undefined;
+    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    let credential;
+
+    if (serviceAccountVar) {
+      try {
+        const serviceAccount = JSON.parse(serviceAccountVar);
+        credential = admin.credential.cert(serviceAccount);
+        console.log("Firebase Admin: Initialized with Service Account from ENV");
+      } catch (e) {
+        console.error("Firebase Admin: Failed to parse FIREBASE_SERVICE_ACCOUNT JSON", e);
+      }
+    }
+
+    if (!credential) {
+      console.warn("Firebase Admin: No Service Account found. Falling back to applicationDefault (may fail on Vercel)");
+      credential = admin.credential.applicationDefault();
+    }
 
     admin.initializeApp({
-      credential: serviceAccount ? admin.credential.cert(serviceAccount) : admin.credential.applicationDefault(),
+      credential,
       projectId: firebaseConfig.projectId
     });
   } catch (error) {
-    console.error("Firebase Admin Init Error:", error);
-    // Fallback for development if no service account is provided
+    console.error("Firebase Admin Critical Init Error:", error);
+    // Last resort fallback
     admin.initializeApp({
       projectId: firebaseConfig.projectId
     });
