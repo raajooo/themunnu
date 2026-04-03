@@ -44,9 +44,11 @@ const firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 const JWT_SECRET = process.env.JWT_SECRET || "munnu-secret-key-123";
 const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 
+const app = express();
+export default app;
+
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(express.json());
 
@@ -272,9 +274,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.VERCEL !== "1") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
