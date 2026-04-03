@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with phone number and delivery addresses.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "displayName": { "type": "string" },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "phone": { "type": "string" },
+              "pincode": { "type": "string" },
+              "address": { "type": "string" },
+              "city": { "type": "string" },
+              "state": { "type": "string" }
+            }
+          }
+        },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "phoneNumber", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Sneaker product details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "brand": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "sizes": { "type": "array", "items": { "type": "string" } },
+        "stock": { "type": "number" },
+        "category": { "type": "string" },
+        "isLimited": { "type": "boolean" },
+        "isTrending": { "type": "boolean" },
+        "isFeatured": { "type": "boolean" },
+        "averageRating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "brand", "price", "stock"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "name": { "type": "string" },
+              "price": { "type": "number" },
+              "quantity": { "type": "number" },
+              "size": { "type": "string" },
+              "image": { "type": "string" }
+            }
+          }
+        },
+        "totalAmount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["razorpay", "cod"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "paid", "failed", "refunded"] },
+        "orderStatus": { "type": "string", "enum": ["pending", "confirmed", "shipped", "delivered", "cancelled"] },
+        "address": { "type": "object" },
+        "trackingId": { "type": "string" },
+        "deliveryEstimate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings and API keys.",
+      "type": "object",
+      "properties": {
+        "razorpayKeyId": { "type": "string" },
+        "razorpayKeySecret": { "type": "string" },
+        "fast2smsApiKey": { "type": "string" },
+        "delhiveryApiKey": { "type": "string" },
+        "isCodEnabled": { "type": "boolean" }
+      }
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Homepage hero banners.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "link": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" }
+      }
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product categories.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Product review and rating.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "userId", "rating", "comment"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles." },
+    "/products/{productId}": { "schema": "Product", "description": "Sneaker inventory." },
+    "/orders/{orderId}": { "schema": "Order", "description": "Customer orders." },
+    "/settings/global": { "schema": "Settings", "description": "Global config." },
+    "/banners/{bannerId}": { "schema": "Banner", "description": "Homepage banners." },
+    "/categories/{categoryId}": { "schema": "Category", "description": "Product categories." },
+    "/reviews/{reviewId}": { "schema": "Review", "description": "Product reviews." }
+  }
+}
