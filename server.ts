@@ -61,7 +61,7 @@ const app = express();
 export default app;
 
 async function startServer() {
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
@@ -199,7 +199,7 @@ async function startServer() {
       }
 
       if (!isPasswordValid) {
-        return res.status(400).json({ error: "Invalid password" });
+        return res.status(400).json({ error: "Wrong password" });
       }
 
       // Ensure specific number is admin and has correct password
