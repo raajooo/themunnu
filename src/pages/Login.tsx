@@ -6,12 +6,24 @@ import { motion } from "motion/react";
 import { toast } from "react-hot-toast";
 import { Phone, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 
-export default function Login() {
+import { User } from "../types";
+
+interface LoginProps {
+  user: User | null;
+}
+
+export default function Login({ user }: LoginProps) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (user) {
+      navigate("/profile");
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

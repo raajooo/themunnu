@@ -6,7 +6,13 @@ import { motion, AnimatePresence } from "motion/react";
 import { toast } from "react-hot-toast";
 import { Phone, User, Mail, Lock, ShieldCheck, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 
-export default function Register() {
+import { User as UserType } from "../types";
+
+interface RegisterProps {
+  user: UserType | null;
+}
+
+export default function Register({ user }: RegisterProps) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -19,6 +25,12 @@ export default function Register() {
   });
 
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (user) {
+      navigate("/profile");
+    }
+  }, [user, navigate]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -38,6 +38,7 @@ export default function App() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
+        setLoading(true);
         // Listen to user document changes in real-time
         unsubscribeSnapshot = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
           if (docSnap.exists()) {
@@ -129,8 +130,8 @@ export default function App() {
           <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout user={user} />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<Login user={user} />} />
+          <Route path="/register" element={<Register user={user} />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/profile" element={<Profile user={user} />} />
           <Route path="/orders" element={<OrderHistory user={user} />} />
