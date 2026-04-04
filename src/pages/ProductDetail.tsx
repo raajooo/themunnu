@@ -23,6 +23,15 @@ export default function ProductDetail() {
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = ((e.pageX - left - window.scrollX) / width) * 100;
+    const y = ((e.pageY - top - window.scrollY) / height) * 100;
+    setZoomPos({ x, y });
+  };
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -164,18 +173,30 @@ export default function ProductDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
         {/* Image Gallery */}
         <div className="space-y-6">
-          <div className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-3xl overflow-hidden group">
+          <div 
+            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-3xl overflow-hidden group cursor-zoom-in"
+            onMouseEnter={() => setIsZoomed(true)}
+            onMouseLeave={() => setIsZoomed(false)}
+            onMouseMove={handleMouseMove}
+          >
             <AnimatePresence mode="wait">
-              <motion.img
+              <motion.div
                 key={currentImage}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                src={product.images?.[currentImage] || ""}
-                alt={product.name}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
+                className="w-full h-full"
+              >
+                <img
+                  src={product.images?.[currentImage] || ""}
+                  alt={product.name}
+                  className={`w-full h-full object-cover transition-transform duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'}`}
+                  style={isZoomed ? {
+                    transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`
+                  } : {}}
+                  referrerPolicy="no-referrer"
+                />
+              </motion.div>
             </AnimatePresence>
             
             <button 

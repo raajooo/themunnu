@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+@layer base {
+  html, body {
+    /* Prevent double-tap zoom and pinch-to-zoom on the entire site */
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Allow zoom only on specific elements if needed, but the user said "only product images zoom ho" */
+  .zoom-image-container {
+    overflow: hidden;
+    cursor: zoom-in;
+  }
+
+  .zoom-image {
+    transition: transform 0.3s ease-out;
+  }
+
+  .zoom-image:hover {
+    transform: scale(1.5);
+  }
+}
