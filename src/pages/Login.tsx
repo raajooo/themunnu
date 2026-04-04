@@ -32,11 +32,11 @@ export default function Login() {
         toast.success("Logged in successfully!");
         navigate("/profile");
       } else {
-        toast.error(data.error || "Login failed. Please check your credentials.");
+        toast.error(data.error || data.details || "Login failed. Please check your credentials.");
       }
     } catch (error: any) {
       console.error("Login Error:", error);
-      toast.error("Something went wrong. Please try again later.");
+      toast.error(error.message || "Something went wrong. Please try again later.");
     } finally {
       setLoading(false);
     }

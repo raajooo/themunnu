@@ -46,10 +46,11 @@ export default function Register() {
         toast.success("Registration successful!");
         navigate("/");
       } else {
-        toast.error(data.error || "Registration failed. Please try again.");
+        toast.error(data.error || data.details || "Registration failed. Please try again.");
       }
-    } catch (error) {
-      toast.error("Something went wrong");
+    } catch (error: any) {
+      console.error("Registration Error:", error);
+      toast.error(error.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
