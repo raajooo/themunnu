@@ -57,6 +57,14 @@ export default function Checkout({ user }: CheckoutProps) {
 
     if (user?.addresses?.length) {
       setAddress(user.addresses[0]);
+      setShowSavedAddresses(true);
+    } else if (user) {
+      setAddress(prev => ({
+        ...prev,
+        name: user.displayName || "",
+        phone: user.phoneNumber || ""
+      }));
+      setShowSavedAddresses(false);
     }
   }, [user]);
 
@@ -64,10 +72,15 @@ export default function Checkout({ user }: CheckoutProps) {
   if (items.length === 0) return <Navigate to="/shop" />;
 
   const handlePlaceOrder = async () => {
-    if (!address.name || !address.phone || !address.address || !address.pincode) {
-      toast.error("Please fill in all address fields");
-      return;
-    }
+    // Validation
+    if (!address.name?.trim()) return toast.error("Name is required");
+    if (!address.phone?.trim()) return toast.error("Phone number is required");
+    if (!/^\d{10}$/.test(address.phone.trim())) return toast.error("Phone number must be 10 digits");
+    if (!address.address?.trim()) return toast.error("Address is required");
+    if (!address.city?.trim()) return toast.error("City is required");
+    if (!address.state?.trim()) return toast.error("State is required");
+    if (!address.pincode?.trim()) return toast.error("Pincode is required");
+    if (!/^\d{6}$/.test(address.pincode.trim())) return toast.error("Pincode must be 6 digits");
 
     setLoading(true);
     try {
@@ -210,7 +223,21 @@ export default function Checkout({ user }: CheckoutProps) {
               </div>
               {user.addresses?.length > 0 && (
                 <button 
-                  onClick={() => setShowSavedAddresses(!showSavedAddresses)}
+                  onClick={() => {
+                    if (showSavedAddresses) {
+                      // Switching to "Enter New"
+                      setAddress({
+                        id: Date.now().toString(),
+                        name: user.displayName || "",
+                        phone: user.phoneNumber || "",
+                        pincode: "",
+                        address: "",
+                        city: "",
+                        state: ""
+                      });
+                    }
+                    setShowSavedAddresses(!showSavedAddresses);
+                  }}
                   className="text-xs font-black uppercase tracking-widest underline underline-offset-4"
                 >
                   {showSavedAddresses ? "Enter New" : "Use Saved"}
@@ -227,9 +254,14 @@ export default function Checkout({ user }: CheckoutProps) {
                       setAddress(addr);
                       setShowSavedAddresses(false);
                     }}
-                    className={`p-6 text-left rounded-3xl border-2 transition-all ${address.id === addr.id ? 'border-black dark:border-white bg-black/5 dark:bg-white/5' : 'border-gray-100 dark:border-gray-900 bg-white dark:bg-gray-950'}`}
+                    className={`p-6 text-left rounded-3xl border-2 transition-all relative group ${address.id === addr.id ? 'border-black dark:border-white bg-black/5 dark:bg-white/5 ring-2 ring-black/5 dark:ring-white/5' : 'border-gray-100 dark:border-gray-900 bg-white dark:bg-gray-950 hover:border-gray-300 dark:hover:border-gray-700'}`}
                   >
-                    <h4 className="font-bold uppercase tracking-tight mb-1">{addr.name}</h4>
+                    {address.id === addr.id && (
+                      <div className="absolute top-4 right-4 text-black dark:text-white">
+                        <CheckCircle2 size={20} />
+                      </div>
+                    )}
+                    <h4 className="font-bold uppercase tracking-tight mb-1 pr-8">{addr.name}</h4>
                     <p className="text-xs text-gray-500 leading-relaxed truncate">
                       {addr.address}, {addr.city}
                     </p>

@@ -7,9 +7,10 @@ import { useCart } from "../hooks/useCart";
 import { formatCurrency } from "../lib/utils";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User } from "lucide-react";
+import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
+import LazyImage from "../components/LazyImage";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -187,14 +188,13 @@ export default function ProductDetail() {
                 exit={{ opacity: 0 }}
                 className="w-full h-full"
               >
-                <img
+                <LazyImage
                   src={product.images?.[currentImage] || ""}
                   alt={product.name}
                   className={`w-full h-full object-cover transition-transform duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'}`}
                   style={isZoomed ? {
                     transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`
                   } : {}}
-                  referrerPolicy="no-referrer"
                 />
               </motion.div>
             </AnimatePresence>
@@ -220,7 +220,7 @@ export default function ProductDetail() {
                 onClick={() => setCurrentImage(idx)}
                 className={`aspect-square rounded-xl overflow-hidden border-2 transition-all ${currentImage === idx ? 'border-black dark:border-white scale-95' : 'border-transparent opacity-60 hover:opacity-100'}`}
               >
-                <img src={img} alt={`${product.name} ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <LazyImage src={img} alt={`${product.name} ${idx}`} className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
@@ -316,6 +316,14 @@ export default function ProductDetail() {
               className="w-full py-5 bg-transparent border-2 border-black dark:border-white text-black dark:text-white font-black text-sm uppercase tracking-[0.2em] rounded-full hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
             >
               Buy Now
+            </button>
+            
+            <button 
+              onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))}
+              className="w-full py-5 bg-gray-100 dark:bg-gray-900 text-black dark:text-white font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-80 transition-all flex items-center justify-center"
+            >
+              <MessageCircle className="mr-3" size={20} />
+              Ask About This Product
             </button>
           </div>
 

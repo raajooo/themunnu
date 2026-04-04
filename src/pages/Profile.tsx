@@ -6,7 +6,8 @@ import { signOut } from "firebase/auth";
 import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
-import { User as UserIcon, MapPin, Package, LogOut, Plus, Trash2, Edit2, X, Loader2, ShieldCheck } from "lucide-react";
+import { User as UserIcon, MapPin, Package, LogOut, Plus, Trash2, Edit2, X, Loader2, ShieldCheck, MessageCircle, AlertTriangle } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
 
 interface ProfileProps {
   user: User | null;
@@ -37,6 +38,20 @@ export default function Profile({ user }: ProfileProps) {
     state: ""
   });
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    isLoading: false
+  });
+
   if (!user) return <Navigate to="/login" />;
 
   const handleLogout = async () => {
@@ -55,6 +70,19 @@ export default function Profile({ user }: ProfileProps) {
     }
   };
 
+  const handleOpenAdd = () => {
+    setEditingAddress(null);
+    setNewAddress({
+      name: user?.displayName || "",
+      phone: user?.phoneNumber || "",
+      pincode: "",
+      address: "",
+      city: "",
+      state: ""
+    });
+    setIsAddingAddress(true);
+  };
+
   const handleOpenEdit = (address: Address) => {
     setEditingAddress(address);
     setNewAddress(address);
@@ -69,6 +97,17 @@ export default function Profile({ user }: ProfileProps) {
 
   const handleAddAddress = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validation
+    if (!newAddress.name?.trim()) return toast.error("Name is required");
+    if (!newAddress.phone?.trim()) return toast.error("Phone number is required");
+    if (!/^\d{10}$/.test(newAddress.phone.trim())) return toast.error("Phone number must be 10 digits");
+    if (!newAddress.address?.trim()) return toast.error("Address is required");
+    if (!newAddress.city?.trim()) return toast.error("City is required");
+    if (!newAddress.state?.trim()) return toast.error("State is required");
+    if (!newAddress.pincode?.trim()) return toast.error("Pincode is required");
+    if (!/^\d{6}$/.test(newAddress.pincode.trim())) return toast.error("Pincode must be 6 digits");
+
     setLoading(true);
     try {
       if (editingAddress) {
@@ -102,15 +141,25 @@ export default function Profile({ user }: ProfileProps) {
   };
 
   const handleDeleteAddress = async (address: Address) => {
-    if (!window.confirm("Are you sure you want to delete this address?")) return;
-    try {
-      await updateDoc(doc(db, "users", user.uid), {
-        addresses: arrayRemove(address)
-      });
-      toast.success("Address deleted");
-    } catch (error) {
-      toast.error("Failed to delete address");
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Address",
+      message: "Are you sure you want to delete this address?",
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        try {
+          await updateDoc(doc(db, "users", user.uid), {
+            addresses: arrayRemove(address)
+          });
+          toast.success("Address deleted");
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          toast.error("Failed to delete address");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    });
   };
 
   return (
@@ -151,6 +200,14 @@ export default function Profile({ user }: ProfileProps) {
               <button onClick={handleLogout} className="w-full flex items-center space-x-4 p-4 rounded-2xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors text-sm font-bold uppercase tracking-widest">
                 <LogOut size={20} />
                 <span>Logout</span>
+              </button>
+              
+              <button 
+                onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))}
+                className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-black dark:bg-white text-white dark:text-black transition-colors text-sm font-bold uppercase tracking-widest mt-4 shadow-lg shadow-black/10"
+              >
+                <MessageCircle size={20} />
+                <span>Support Chat</span>
               </button>
             </nav>
           </div>
@@ -220,7 +277,7 @@ export default function Profile({ user }: ProfileProps) {
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black tracking-tighter uppercase">Saved Addresses</h3>
               <button 
-                onClick={() => setIsAddingAddress(true)}
+                onClick={handleOpenAdd}
                 className="flex items-center space-x-2 text-xs font-black uppercase tracking-widest bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-full hover:scale-105 transition-transform"
               >
                 <Plus size={16} />
@@ -368,6 +425,15 @@ export default function Profile({ user }: ProfileProps) {
               </div>
             )}
           </AnimatePresence>
+
+          <ConfirmModal
+            isOpen={confirmModal.isOpen}
+            onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            onConfirm={confirmModal.onConfirm}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            isLoading={confirmModal.isLoading}
+          />
         </div>
       </div>
     </div>

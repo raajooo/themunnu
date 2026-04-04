@@ -40,8 +40,8 @@ service cloud.firestore {
       return isAuthenticated() && 
         ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         request.auth.uid == "9193731911" ||
-         request.auth.uid == "93731911" ||
+         request.auth.token.phone_number == "+919193731911" ||
+         request.auth.token.phone_number == "9193731911" ||
          (request.auth.token.email == "raajooothakur0@gmail.com" && request.auth.token.email_verified == true));
     }
 
@@ -75,7 +75,7 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     match /settings/{settingId} {

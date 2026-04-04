@@ -113,7 +113,7 @@ export default function Register({ user }: RegisterProps) {
             <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
             <input 
               type="email" 
-              placeholder="Email (Optional)" 
+              placeholder="Email (Recommended for Login)" 
               className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}

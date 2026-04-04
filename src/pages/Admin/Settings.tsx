@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { toast } from "react-hot-toast";
-import { Shield, Key, Truck, MessageSquare, Save, Loader2, Database as DatabaseIcon } from "lucide-react";
+import { Shield, Save, Loader2, Database as DatabaseIcon, Trash2, AlertTriangle } from "lucide-react";
+import ConfirmModal from "../../components/ConfirmModal";
 
 export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [settings, setSettings] = useState({
-    razorpayKeyId: "",
-    razorpayKeySecret: "",
-    fast2smsApiKey: "",
-    delhiveryApiKey: "",
     isCodEnabled: true
   });
+
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -68,82 +68,12 @@ export default function AdminSettings() {
     <div className="max-w-4xl space-y-12 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-5xl font-black tracking-tighter uppercase mb-2">API Settings</h1>
-          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Configure your external integrations</p>
+          <h1 className="text-5xl font-black tracking-tighter uppercase mb-2">System Settings</h1>
+          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Configure your store integrations</p>
         </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">
-        {/* Razorpay */}
-        <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
-          <div className="flex items-center space-x-4 mb-8">
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl">
-              <CreditCardIcon size={24} />
-            </div>
-            <h3 className="text-xl font-black uppercase tracking-tight">Razorpay Integration</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Key ID</label>
-              <input 
-                type="text" 
-                className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-xs"
-                value={settings.razorpayKeyId}
-                onChange={(e) => setSettings({...settings, razorpayKeyId: e.target.value})}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Key Secret</label>
-              <input 
-                type="password" 
-                className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-xs"
-                value={settings.razorpayKeySecret}
-                onChange={(e) => setSettings({...settings, razorpayKeySecret: e.target.value})}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* SMS & Shipping */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
-            <div className="flex items-center space-x-4 mb-8">
-              <div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-500 rounded-2xl">
-                <MessageSquare size={24} />
-              </div>
-              <h3 className="text-xl font-black uppercase tracking-tight">Fast2SMS</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">API Key</label>
-              <input 
-                type="password" 
-                className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-xs"
-                value={settings.fast2smsApiKey}
-                onChange={(e) => setSettings({...settings, fast2smsApiKey: e.target.value})}
-              />
-            </div>
-          </section>
-
-          <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
-            <div className="flex items-center space-x-4 mb-8">
-              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 text-purple-500 rounded-2xl">
-                <Truck size={24} />
-              </div>
-              <h3 className="text-xl font-black uppercase tracking-tight">Delhivery</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">API Key</label>
-              <input 
-                type="password" 
-                className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-xs"
-                value={settings.delhiveryApiKey}
-                onChange={(e) => setSettings({...settings, delhiveryApiKey: e.target.value})}
-              />
-            </div>
-          </section>
-        </div>
-
         {/* Payment Controls */}
         <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
           <div className="flex items-center justify-between">
@@ -173,33 +103,59 @@ export default function AdminSettings() {
                 <DatabaseIcon size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-black uppercase tracking-tight">System Maintenance</h3>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Populate your store with initial sneakers</p>
+                <h3 className="text-xl font-black uppercase tracking-tight">Clear Store Data</h3>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Remove all products and categories to start fresh</p>
               </div>
             </div>
             <button 
               type="button"
-              onClick={async () => {
-                const products = [
-                  { name: "Air Max Pulse", brand: "Nike", price: 13995, stock: 10, category: "lifestyle", isFeatured: true, images: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff"], sizes: ["7", "8", "9", "10", "11"] },
-                  { name: "Yeezy Boost 350", brand: "Adidas", price: 22999, stock: 5, category: "limited", isLimited: true, images: ["https://images.unsplash.com/photo-1584735175315-9d5df23860e6"], sizes: ["7", "8", "9", "10", "11"] },
-                  { name: "Jordan 1 Retro", brand: "Jordan", price: 15995, stock: 8, category: "trending", isTrending: true, images: ["https://images.unsplash.com/photo-1552346154-21d32810aba3"], sizes: ["7", "8", "9", "10", "11"] },
-                  { name: "RS-X Efekt", brand: "Puma", price: 8999, stock: 15, category: "lifestyle", images: ["https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a"], sizes: ["7", "8", "9", "10", "11"] }
-                ];
-                try {
-                  const { collection, addDoc } = await import("firebase/firestore");
-                  for (const p of products) {
-                    await addDoc(collection(db, "products"), { ...p, createdAt: new Date().toISOString(), description: "Premium sneaker for the next generation. Bold design and ultimate comfort." });
-                  }
-                  toast.success("Store seeded successfully!");
-                } catch (e) { toast.error("Seeding failed"); }
-              }}
-              className="px-8 py-3 bg-red-500 text-white font-black text-xs uppercase tracking-widest rounded-full hover:bg-red-600 transition-colors"
+              disabled={clearing}
+              onClick={() => setIsConfirmOpen(true)}
+              className="px-8 py-3 bg-red-500 text-white font-black text-xs uppercase tracking-widest rounded-full hover:bg-red-600 transition-colors flex items-center space-x-2 disabled:opacity-50"
             >
-              Seed Store Data
+              {clearing ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+              <span>{clearing ? "Clearing..." : "Clear All Data"}</span>
             </button>
           </div>
         </section>
+
+        <ConfirmModal
+          isOpen={isConfirmOpen}
+          onClose={() => setIsConfirmOpen(false)}
+          onConfirm={async () => {
+            setIsConfirmOpen(false);
+            setClearing(true);
+            const toastId = toast.loading("Clearing store data...");
+            
+            try {
+              // Delete Products
+              const productsSnap = await getDocs(collection(db, "products"));
+              const productDeletions = productsSnap.docs.map(d => deleteDoc(doc(db, "products", d.id)));
+              await Promise.all(productDeletions);
+
+              // Delete Categories
+              const categoriesSnap = await getDocs(collection(db, "categories"));
+              const categoryDeletions = categoriesSnap.docs.map(d => deleteDoc(doc(db, "categories", d.id)));
+              await Promise.all(categoryDeletions);
+
+              // Delete Orders
+              const ordersSnap = await getDocs(collection(db, "orders"));
+              const orderDeletions = ordersSnap.docs.map(d => deleteDoc(doc(db, "orders", d.id)));
+              await Promise.all(orderDeletions);
+
+              toast.success("Store data (Products, Categories, and Orders) cleared successfully!", { id: toastId });
+            } catch (e) { 
+              console.error("Error clearing data:", e);
+              toast.error("Failed to clear data. Check console for details.", { id: toastId }); 
+            } finally {
+              setClearing(false);
+            }
+          }}
+          title="Clear All Data"
+          message="CRITICAL: This will delete ALL products, categories, and orders. This action cannot be undone. Are you sure?"
+          confirmText="Clear Everything"
+          isLoading={clearing}
+        />
 
         <div className="flex justify-end">
           <button 
@@ -213,14 +169,5 @@ export default function AdminSettings() {
         </div>
       </form>
     </div>
-  );
-}
-
-function CreditCardIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="20" height="14" x="2" y="5" rx="2" />
-      <line x1="2" x2="22" y1="10" y2="10" />
-    </svg>
   );
 }

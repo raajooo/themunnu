@@ -5,7 +5,7 @@ import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { formatCurrency } from "../lib/utils";
 import { format } from "date-fns";
-import { Package, ChevronRight, Search } from "lucide-react";
+import { Package, ChevronRight, Search, MessageCircle } from "lucide-react";
 
 interface OrderHistoryProps {
   user: User | null;
@@ -45,7 +45,16 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
           <p className="text-gray-500 mt-2">Track and manage your sneaker drops</p>
         </div>
         
-        <div className="relative w-full md:w-64">
+        <div className="flex items-center space-x-4">
+          <button 
+            onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))}
+            className="flex items-center space-x-2 px-6 py-3 bg-black dark:bg-white text-white dark:text-black rounded-full text-xs font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg shadow-black/10"
+          >
+            <MessageCircle size={18} />
+            <span>Support</span>
+          </button>
+          
+          <div className="relative w-full md:w-64">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
             type="text" 
@@ -54,8 +63,9 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
           />
         </div>
       </div>
+    </div>
 
-      {loading ? (
+    {loading ? (
         <div className="space-y-6">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-48 bg-gray-50 dark:bg-gray-950 rounded-[2.5rem] animate-pulse" />

@@ -101,22 +101,35 @@ app.post("/api/auth/register", async (req, res) => {
   const phoneNumber = rawPhone.replace(/\D/g, "").slice(-10);
 
   try {
-    const userSnap = await firestore.collection("users").where("phoneNumber", "==", phoneNumber).get();
-    if (!userSnap.empty) {
-      return res.status(400).json({ error: "User already registered" });
+    // Check if phone number already exists
+    const phoneSnap = await firestore.collection("users").where("phoneNumber", "==", phoneNumber).get();
+    if (!phoneSnap.empty) {
+      return res.status(400).json({ error: "Phone number already registered" });
     }
 
-    const isAdminNumber = phoneNumber === "9193731911" || phoneNumber === "93731911";
-    const finalPassword = isAdminNumber ? "Thakur.Asmit" : password;
+    // Check if email already exists (if provided)
+    if (email) {
+      const emailSnap = await firestore.collection("users").where("email", "==", email.toLowerCase()).get();
+      if (!emailSnap.empty) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+    }
+
+    const adminEmail = "raajooothakur0@gmail.com";
+    const adminPhone = "9193731911";
+    const adminPassword = "Thakur.Asmit";
+
+    const isAdminUser = (phoneNumber === adminPhone || phoneNumber === "93731911" || (email && email.toLowerCase() === adminEmail));
+    const finalPassword = isAdminUser ? adminPassword : password;
     const hashedPassword = await bcrypt.hash(finalPassword, 10);
 
     const userDoc = {
       uid: phoneNumber,
       phoneNumber,
       displayName: fullName,
-      email: email || "",
+      email: email ? email.toLowerCase() : "",
       password: hashedPassword,
-      role: isAdminNumber ? "admin" : "user",
+      role: isAdminUser ? "admin" : "user",
       addresses: [],
       createdAt: new Date().toISOString()
     };
@@ -132,22 +145,44 @@ app.post("/api/auth/register", async (req, res) => {
 
 // 3. Login User
 app.post("/api/auth/login", async (req, res) => {
-  const { phoneNumber: rawPhone, password } = req.body;
-  const phoneNumber = rawPhone.replace(/\D/g, "").slice(-10);
+  const { identifier, password } = req.body; // identifier can be email or phone
+  if (!identifier || !password) {
+    return res.status(400).json({ error: "Identifier and password are required" });
+  }
 
   try {
-    const userDoc = await firestore.collection("users").doc(phoneNumber).get();
-    if (!userDoc.exists) {
-      return res.status(400).json({ error: "User not found" });
+    let userData: any = null;
+    let phoneNumber: string = "";
+
+    // Check if identifier is an email
+    const isEmail = identifier.includes("@");
+
+    if (isEmail) {
+      const emailQuery = await firestore.collection("users").where("email", "==", identifier.toLowerCase()).get();
+      if (emailQuery.empty) {
+        return res.status(400).json({ error: "User not found with this email" });
+      }
+      userData = emailQuery.docs[0].data();
+      phoneNumber = userData.phoneNumber;
+    } else {
+      // Treat as phone number
+      phoneNumber = identifier.replace(/\D/g, "").slice(-10);
+      const userDoc = await firestore.collection("users").doc(phoneNumber).get();
+      if (!userDoc.exists) {
+        return res.status(400).json({ error: "User not found with this phone number" });
+      }
+      userData = userDoc.data();
     }
 
-    const userData = userDoc.data();
     const adminPassword = "Thakur.Asmit";
-    const isAdminNumber = phoneNumber === "9193731911" || phoneNumber === "93731911";
+    const adminEmail = "raajooothakur0@gmail.com";
+    const adminPhone = "9193731911";
+    
+    const isAdminUser = phoneNumber === adminPhone || phoneNumber === "93731911" || (userData?.email && userData.email.toLowerCase() === adminEmail);
     
     let isPasswordValid = await bcrypt.compare(password, userData?.password);
     
-    if (!isPasswordValid && isAdminNumber && password === adminPassword) {
+    if (!isPasswordValid && isAdminUser && password === adminPassword) {
       isPasswordValid = true;
     }
 
@@ -155,7 +190,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ error: "Wrong password" });
     }
 
-    if (isAdminNumber) {
+    if (isAdminUser) {
       const isCorrectAdminPassInDb = await bcrypt.compare(adminPassword, userData?.password);
       if (!isCorrectAdminPassInDb || userData?.role !== "admin") {
         const newHashedPassword = await bcrypt.hash(adminPassword, 10);

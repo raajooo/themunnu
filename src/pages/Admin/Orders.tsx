@@ -19,34 +19,40 @@ export default function AdminOrders() {
   const isFirstLoad = useRef(true);
 
   useEffect(() => {
-    // Initialize notification sound
-    audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+    // Initialize notification sound - Subtle "Ping"
+    audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+    audioRef.current.volume = 0.5;
     
     const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
     
     const unsubscribe = onSnapshot(q, (snap) => {
       const newOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       
-      if (!isFirstLoad.current && newOrders.length > orders.length) {
+      if (!isFirstLoad.current && snap.docChanges().some(change => change.type === 'added')) {
         // New order arrived
-        const latestOrder = newOrders[0];
-        toast.success(`New Order Received! #${latestOrder.id.slice(-8)}`, {
-          duration: 5000,
-          icon: '🔔',
-          style: {
-            borderRadius: '20px',
-            background: '#000',
-            color: '#fff',
-            fontWeight: '900',
-            textTransform: 'uppercase',
-            fontSize: '12px',
-            letterSpacing: '0.1em'
-          }
+        const addedDocs = snap.docChanges().filter(change => change.type === 'added');
+        addedDocs.forEach(change => {
+          toast.success(`New Order Received! #${change.doc.id.slice(-8)}`, {
+            duration: 10000,
+            icon: '🔥',
+            style: {
+              borderRadius: '30px',
+              background: '#000',
+              color: '#fff',
+              padding: '24px',
+              fontWeight: '900',
+              textTransform: 'uppercase',
+              fontSize: '12px',
+              letterSpacing: '0.1em',
+              border: '2px solid rgba(255,255,255,0.1)',
+              boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.5)',
+            }
+          });
         });
         
         // Play notification sound
-        audioRef.current?.play().catch(e => console.log("Audio play failed:", e));
-        setNewOrderCount(prev => prev + 1);
+        audioRef.current?.play().catch(e => console.log("Audio play failed (Autoplay policy):", e));
+        setNewOrderCount(prev => prev + addedDocs.length);
       }
       
       setOrders(newOrders);
@@ -58,7 +64,7 @@ export default function AdminOrders() {
     });
 
     return () => unsubscribe();
-  }, [orders.length]);
+  }, []);
 
   const updateStatus = async (id: string, status: string) => {
     try {
@@ -77,39 +83,263 @@ export default function AdminOrders() {
       <html>
         <head>
           <title>Shipping Label - ${order.id}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; padding: 20px; }
-            .label { border: 2px solid black; padding: 20px; width: 400px; }
-            .header { border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-            .brand { font-weight: 900; font-size: 24px; }
-            .section { margin-bottom: 15px; }
-            .label-text { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #666; }
-            .value { font-size: 14px; font-weight: 700; }
-            .address { font-size: 12px; }
-            .barcode { background: black; height: 60px; margin-top: 20px; }
+            @page { size: 4in 6in; margin: 0; }
+            body { 
+              font-family: 'Inter', sans-serif; 
+              margin: 0; 
+              padding: 0; 
+              background: white;
+              color: black;
+            }
+            .label-container {
+              width: 4in;
+              height: 6in;
+              padding: 15px;
+              box-sizing: border-box;
+              border: 1px solid #eee;
+              display: flex;
+              flex-direction: column;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 3px solid black;
+              padding-bottom: 10px;
+              margin-bottom: 15px;
+            }
+            .brand-section h1 {
+              margin: 0;
+              font-size: 32px;
+              font-weight: 900;
+              letter-spacing: -2px;
+              line-height: 1;
+            }
+            .brand-section p {
+              margin: 2px 0 0;
+              font-size: 8px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+              color: #666;
+            }
+            .courier-logo {
+              text-align: right;
+            }
+            .courier-logo div {
+              font-size: 14px;
+              font-weight: 900;
+              text-transform: uppercase;
+              background: black;
+              color: white;
+              padding: 4px 8px;
+              border-radius: 4px;
+            }
+            .courier-logo span {
+              font-size: 8px;
+              font-weight: 700;
+              display: block;
+              margin-top: 4px;
+            }
+            .address-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 15px;
+              margin-bottom: 20px;
+            }
+            .address-box {
+              font-size: 10px;
+            }
+            .address-box h3 {
+              margin: 0 0 5px;
+              font-size: 8px;
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #888;
+              letter-spacing: 1px;
+            }
+            .address-box p {
+              margin: 0;
+              line-height: 1.4;
+            }
+            .address-box .name {
+              font-size: 14px;
+              font-weight: 900;
+              margin-bottom: 4px;
+              text-transform: uppercase;
+            }
+            .main-barcode {
+              flex-grow: 1;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              border: 2px dashed #ddd;
+              border-radius: 12px;
+              margin: 10px 0;
+              padding: 20px;
+            }
+            .barcode-lines {
+              width: 100%;
+              height: 80px;
+              background: repeating-linear-gradient(
+                90deg,
+                #000,
+                #000 2px,
+                #fff 2px,
+                #fff 4px,
+                #000 4px,
+                #000 5px,
+                #fff 5px,
+                #fff 8px
+              );
+            }
+            .barcode-text {
+              font-size: 12px;
+              font-weight: 900;
+              margin-top: 10px;
+              letter-spacing: 4px;
+            }
+            .order-info {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 10px;
+              border-top: 2px solid black;
+              padding-top: 15px;
+              margin-top: auto;
+            }
+            .info-item {
+              font-size: 9px;
+            }
+            .info-item h4 {
+              margin: 0 0 2px;
+              font-size: 7px;
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #888;
+            }
+            .info-item p {
+              margin: 0;
+              font-weight: 700;
+            }
+            .payment-badge {
+              display: inline-block;
+              padding: 2px 6px;
+              background: #f0f0f0;
+              border-radius: 4px;
+              font-size: 8px;
+              font-weight: 900;
+              text-transform: uppercase;
+            }
+            .qr-placeholder {
+              width: 60px;
+              height: 60px;
+              border: 1px solid #eee;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 6px;
+              text-align: center;
+              color: #ccc;
+            }
+            .fragile-badge {
+              border: 2px solid black;
+              padding: 4px 8px;
+              text-align: center;
+              font-weight: 900;
+              font-size: 10px;
+              text-transform: uppercase;
+              margin-top: 10px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 5px;
+            }
+            .fragile-badge span {
+              font-size: 14px;
+            }
+            @media print {
+              .label-container { border: none; }
+            }
           </style>
         </head>
         <body>
-          <div class="label">
+          <div class="label-container">
             <div class="header">
-              <div class="brand">MUNNU</div>
-              <div class="label-text">Delhivery Express</div>
+              <div class="brand-section">
+                <h1>MUNNU</h1>
+                <p>Premium Streetwear</p>
+              </div>
+              <div class="courier-logo">
+                <div>DELHIVERY</div>
+                <span>Express Surface</span>
+              </div>
             </div>
-            <div class="section">
-              <div class="label-text">Ship To:</div>
-              <div class="value">${order.address.name}</div>
-              <div class="address">${order.address.address}, ${order.address.city}, ${order.address.state} - ${order.address.pincode}</div>
-              <div class="value">Phone: ${order.address.phone}</div>
+
+            <div class="address-grid">
+              <div class="address-box">
+                <h3>Ship To</h3>
+                <p class="name">${order.address.name}</p>
+                <p>${order.address.address}</p>
+                <p>${order.address.city}, ${order.address.state}</p>
+                <p>PIN: <strong>${order.address.pincode}</strong></p>
+                <p style="margin-top: 5px;">PH: <strong>${order.address.phone}</strong></p>
+              </div>
+              <div class="address-box" style="text-align: right;">
+                <h3>Return Address</h3>
+                <p class="name" style="font-size: 10px;">MUNNU STORE</p>
+                <p>Sector 12, Noida</p>
+                <p>Uttar Pradesh - 201301</p>
+                <p>PH: 9193731911</p>
+                <div class="fragile-badge" style="margin-left: auto; width: fit-content;">
+                  <span>📦</span> FRAGILE
+                </div>
+              </div>
             </div>
-            <div class="section">
-              <div class="label-text">Order Details:</div>
-              <div class="value">Order ID: #${order.id.slice(-8)}</div>
-              <div class="value">Payment: ${order.paymentMethod.toUpperCase()} (${order.paymentStatus.toUpperCase()})</div>
+
+            <div class="main-barcode">
+              <div class="barcode-lines"></div>
+              <div class="barcode-text">${order.id.slice(0, 12).toUpperCase()}</div>
             </div>
-            <div class="barcode"></div>
-            <div style="text-align: center; font-size: 10px; margin-top: 10px;">${order.id}</div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 15px;">
+              <div class="address-box">
+                <h3>Order ID</h3>
+                <p style="font-size: 14px; font-weight: 900;">#${order.id.slice(-8).toUpperCase()}</p>
+                <p style="font-size: 8px; color: #666;">Date: ${format(new Date(order.createdAt), "dd MMM yyyy")}</p>
+              </div>
+              <div style="text-align: right;">
+                <div class="qr-placeholder" style="margin-left: auto;">
+                  SCAN FOR<br>DETAILS
+                </div>
+                <p style="font-size: 6px; font-weight: 900; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px;">Premium Packaging</p>
+              </div>
+            </div>
+
+            <div class="order-info">
+              <div class="info-item">
+                <h4>Weight</h4>
+                <p>0.50 KG</p>
+              </div>
+              <div class="info-item">
+                <h4>Payment</h4>
+                <p><span class="payment-badge">${order.paymentMethod}</span></p>
+                <p style="font-size: 10px; margin-top: 2px;">${formatCurrency(order.totalAmount)}</p>
+              </div>
+              <div class="info-item" style="text-align: right;">
+                <h4>Tracking</h4>
+                <p>${order.trackingId || 'PENDING'}</p>
+              </div>
+            </div>
           </div>
-          <script>window.print();</script>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
         </body>
       </html>
     `;

@@ -226,12 +226,21 @@ export default function AdminDashboard() {
               </p>
             </button>
             <button 
+              onClick={() => navigate("/admin/users")}
+              className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
+            >
+              <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">Access Control</p>
+              <p className="text-lg font-black uppercase tracking-tight flex items-center">
+                Manage Users <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
+              </p>
+            </button>
+            <button 
               onClick={() => navigate("/admin/settings")}
               className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
             >
               <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">System</p>
               <p className="text-lg font-black uppercase tracking-tight flex items-center">
-                API Settings <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
+                System Settings <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
               </p>
             </button>
           </div>

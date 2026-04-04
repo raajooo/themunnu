@@ -24,21 +24,21 @@ import AdminProducts from "./pages/Admin/Products";
 import AdminCategories from "./pages/Admin/Categories";
 import AdminOrders from "./pages/Admin/Orders";
 import AdminSettings from "./pages/Admin/Settings";
+import AdminUsers from "./pages/Admin/Users";
 
 // Components
 import Layout from "./components/Layout";
 import AdminLayout from "./components/Admin/AdminLayout";
+import ScrollToTop from "./components/ScrollToTop";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let unsubscribeSnapshot: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        setLoading(true);
         // Listen to user document changes in real-time
         unsubscribeSnapshot = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
           if (docSnap.exists()) {
@@ -52,10 +52,8 @@ export default function App() {
               createdAt: new Date().toISOString(),
             });
           }
-          setLoading(false);
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
-          setLoading(false);
         });
       } else {
         if (unsubscribeSnapshot) {
@@ -63,7 +61,6 @@ export default function App() {
           unsubscribeSnapshot = null;
         }
         setUser(null);
-        setLoading(false);
       }
     });
 
@@ -111,16 +108,9 @@ export default function App() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center bg-black text-white">
-        <div className="text-4xl font-bold animate-pulse">MUNNU</div>
-      </div>
-    );
-  }
-
   return (
     <Router>
+      <ScrollToTop />
       <Toaster position="top-center" />
       <Routes>
         {/* Public Routes */}
@@ -144,6 +134,7 @@ export default function App() {
           <Route path="products" element={<AdminProducts />} />
           <Route path="categories" element={<AdminCategories />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="users" element={<AdminUsers />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Routes>

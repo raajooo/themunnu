@@ -6,6 +6,7 @@ import { db } from "../firebase";
 import { Product, Banner, Category } from "../types";
 import ProductCard from "../components/ProductCard";
 import { ArrowRight, Zap, TrendingUp, Star } from "lucide-react";
+import LazyImage from "../components/LazyImage";
 
 export default function Home() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
@@ -51,11 +52,10 @@ export default function Home() {
       {/* Hero Section */}
       <section className="relative h-[85vh] overflow-hidden bg-black">
         <div className="absolute inset-0 opacity-60">
-          <img 
+          <LazyImage 
             src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=2070" 
             alt="Hero" 
             className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
           />
         </div>
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
@@ -131,10 +131,10 @@ export default function Home() {
                 to={`/shop?category=${cat.slug}`} 
                 className={`${index === 0 ? 'md:col-span-2' : ''} relative group overflow-hidden rounded-3xl h-[300px] md:h-full`}
               >
-                <img 
-                  src={index === 0 ? "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&q=80&w=2070" : index === 1 ? "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?auto=format&fit=crop&q=80&w=1000" : "https://images.unsplash.com/photo-1556906781-9a412961c28c?auto=format&fit=crop&q=80&w=1000"} 
+                <LazyImage 
+                  src={cat.imageUrl || (index === 0 ? "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&q=80&w=2070" : index === 1 ? "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?auto=format&fit=crop&q=80&w=1000" : "https://images.unsplash.com/photo-1556906781-9a412961c28c?auto=format&fit=crop&q=80&w=1000")} 
+                  alt={cat.name}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  referrerPolicy="no-referrer"
                 />
                 <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
                 <div className="absolute bottom-10 left-10 text-white">

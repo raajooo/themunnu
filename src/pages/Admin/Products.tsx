@@ -3,9 +3,10 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy 
 import { db } from "../../firebase";
 import { Product, Category } from "../../types";
 import { formatCurrency } from "../../lib/utils";
-import { Plus, Search, Edit2, Trash2, X, Upload, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Upload, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
+import ConfirmModal from "../../components/ConfirmModal";
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -28,6 +29,22 @@ export default function AdminProducts() {
   });
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    isLoading: false
+  });
 
   useEffect(() => {
     fetchProducts();
@@ -125,13 +142,75 @@ export default function AdminProducts() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this product?")) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Product",
+      message: "Are you sure you want to delete this product? This action cannot be undone.",
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        try {
+          await deleteDoc(doc(db, "products", id));
+          toast.success("Product deleted");
+          fetchProducts();
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          toast.error("Failed to delete product");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedProducts.length === filteredProducts.length) {
+      setSelectedProducts([]);
+    } else {
+      setSelectedProducts(filteredProducts.map(p => p.id));
+    }
+  };
+
+  const handleSelectProduct = (id: string) => {
+    setSelectedProducts(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Bulk Delete",
+      message: `Are you sure you want to delete ${selectedProducts.length} products? This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        const toastId = toast.loading(`Deleting ${selectedProducts.length} products...`);
+        try {
+          await Promise.all(selectedProducts.map(id => deleteDoc(doc(db, "products", id))));
+          toast.success("Bulk delete successful", { id: toastId });
+          setSelectedProducts([]);
+          fetchProducts();
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          toast.error("Bulk delete failed", { id: toastId });
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    });
+  };
+
+  const handleBulkUpdateStatus = async (field: 'isLimited' | 'isTrending' | 'isFeatured', value: boolean) => {
+    setBulkActionLoading(true);
+    const toastId = toast.loading(`Updating ${selectedProducts.length} products...`);
     try {
-      await deleteDoc(doc(db, "products", id));
-      toast.success("Product deleted");
+      await Promise.all(selectedProducts.map(id => updateDoc(doc(db, "products", id), { [field]: value })));
+      toast.success("Bulk update successful", { id: toastId });
+      setSelectedProducts([]);
       fetchProducts();
     } catch (error) {
-      toast.error("Failed to delete product");
+      toast.error("Bulk update failed", { id: toastId });
+    } finally {
+      setBulkActionLoading(false);
     }
   };
 
@@ -201,6 +280,14 @@ export default function AdminProducts() {
           <table className="w-full text-left">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
+                <th className="px-8 py-6 w-10">
+                  <input 
+                    type="checkbox" 
+                    className="w-4 h-4 accent-black dark:accent-white cursor-pointer"
+                    checked={filteredProducts.length > 0 && selectedProducts.length === filteredProducts.length}
+                    onChange={handleSelectAll}
+                  />
+                </th>
                 <th className="px-8 py-6">Product</th>
                 <th className="px-8 py-6">Category</th>
                 <th className="px-8 py-6">Price</th>
@@ -211,7 +298,15 @@ export default function AdminProducts() {
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
               {filteredProducts.map(product => (
-                <tr key={product.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors">
+                <tr key={product.id} className={`hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors ${selectedProducts.includes(product.id) ? 'bg-gray-50 dark:bg-gray-900' : ''}`}>
+                  <td className="px-8 py-6">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 accent-black dark:accent-white cursor-pointer"
+                      checked={selectedProducts.includes(product.id)}
+                      onChange={() => handleSelectProduct(product.id)}
+                    />
+                  </td>
                   <td className="px-8 py-6">
                     <div className="flex items-center space-x-4">
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-900">
@@ -245,15 +340,17 @@ export default function AdminProducts() {
                           setFormData(product);
                           setIsModalOpen(true);
                         }}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all text-xs font-bold uppercase tracking-widest"
                       >
-                        <Edit2 size={18} />
+                        <Edit2 size={14} />
+                        <span>Rename</span>
                       </button>
                       <button 
                         onClick={() => handleDelete(product.id)}
-                        className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-full transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl transition-all text-xs font-bold uppercase tracking-widest"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={14} />
+                        <span>Remove</span>
                       </button>
                     </div>
                   </td>
@@ -450,6 +547,80 @@ export default function AdminProducts() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Bulk Actions Bar */}
+      <AnimatePresence>
+        {selectedProducts.length > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[90] w-full max-w-2xl px-4"
+          >
+            <div className="bg-black dark:bg-white text-white dark:text-black p-6 rounded-3xl shadow-2xl flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="bg-white/20 dark:bg-black/20 px-4 py-2 rounded-xl">
+                  <span className="text-xs font-black uppercase tracking-widest">{selectedProducts.length} Selected</span>
+                </div>
+                <button 
+                  onClick={() => setSelectedProducts([])}
+                  className="text-[10px] font-black uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  Deselect All
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <div className="h-8 w-[1px] bg-white/10 dark:bg-black/10 mx-2" />
+                
+                <div className="flex space-x-1">
+                  <button 
+                    onClick={() => handleBulkUpdateStatus('isLimited', true)}
+                    className="p-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-xl transition-all"
+                    title="Mark as Limited"
+                  >
+                    <div className="w-3 h-3 bg-purple-500 rounded-full" />
+                  </button>
+                  <button 
+                    onClick={() => handleBulkUpdateStatus('isTrending', true)}
+                    className="p-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-xl transition-all"
+                    title="Mark as Trending"
+                  >
+                    <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                  </button>
+                  <button 
+                    onClick={() => handleBulkUpdateStatus('isFeatured', true)}
+                    className="p-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-xl transition-all"
+                    title="Mark as Featured"
+                  >
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full" />
+                  </button>
+                </div>
+
+                <div className="h-8 w-[1px] bg-white/10 dark:bg-black/10 mx-2" />
+
+                <button 
+                  onClick={handleBulkDelete}
+                  disabled={bulkActionLoading}
+                  className="flex items-center space-x-2 px-6 py-3 bg-red-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {bulkActionLoading ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={confirmModal.isLoading}
+      />
     </div>
   );
 }

@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Category } from "../../types";
-import { Plus, Search, Edit2, Trash2, X, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
+import ConfirmModal from "../../components/ConfirmModal";
 
 export default function AdminCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -13,14 +14,55 @@ export default function AdminCategories() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState<Partial<Category>>({
     name: "",
-    slug: ""
+    slug: "",
+    imageUrl: ""
   });
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    isLoading: false
+  });
 
   useEffect(() => {
     fetchCategories();
   }, []);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image is too large (max 2MB)");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      setFormData({ ...formData, imageUrl: base64 });
+    } catch (error) {
+      toast.error("Failed to read image");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const filteredCategories = categories.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -70,14 +112,24 @@ export default function AdminCategories() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this category? This will not delete products in this category.")) return;
-    try {
-      await deleteDoc(doc(db, "categories", id));
-      toast.success("Category deleted");
-      fetchCategories();
-    } catch (error) {
-      toast.error("Failed to delete category");
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Category",
+      message: "Are you sure you want to delete this category? This will not delete products in this category.",
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        try {
+          await deleteDoc(doc(db, "categories", id));
+          toast.success("Category deleted");
+          fetchCategories();
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          toast.error("Failed to delete category");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    });
   };
 
   const generateSlug = (name: string) => {
@@ -146,6 +198,7 @@ export default function AdminCategories() {
           <table className="w-full text-left">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
+                <th className="px-8 py-6">Image</th>
                 <th className="px-8 py-6">Category Name</th>
                 <th className="px-8 py-6">Slug</th>
                 <th className="px-8 py-6 text-right">Actions</th>
@@ -154,6 +207,17 @@ export default function AdminCategories() {
             <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
               {filteredCategories.map(category => (
                 <tr key={category.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors">
+                  <td className="px-8 py-6">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
+                      {category.imageUrl ? (
+                        <img src={category.imageUrl} alt={category.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <Plus size={16} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-8 py-6">
                     <p className="text-sm font-bold uppercase tracking-tight">{category.name}</p>
                   </td>
@@ -210,6 +274,40 @@ export default function AdminCategories() {
               </div>
 
               <form onSubmit={handleSubmit} className="p-8 space-y-6">
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Category Image</label>
+                  <div className="flex items-center space-x-6">
+                    <div className="w-24 h-24 rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
+                      {formData.imageUrl ? (
+                        <>
+                          <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({ ...formData, imageUrl: "" })}
+                            className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="text-white" size={20} />
+                          </button>
+                        </>
+                      ) : (
+                        <Upload className="text-gray-400" size={24} />
+                      )}
+                    </div>
+                    <label className="flex-grow">
+                      <div className="px-6 py-3 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
+                        {uploading ? "Uploading..." : "Select Image"}
+                      </div>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={uploading}
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Category Name</label>
                   <input 
@@ -264,6 +362,15 @@ export default function AdminCategories() {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={confirmModal.isLoading}
+      />
     </div>
   );
 }

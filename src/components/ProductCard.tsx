@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Product } from "../types";
 import { formatCurrency } from "../lib/utils";
 import { ShoppingCart, Heart, Star } from "lucide-react";
+import LazyImage from "./LazyImage";
 
 interface ProductCardProps {
   product: Product;
@@ -17,11 +18,10 @@ export default function ProductCard({ product }: ProductCardProps) {
       className="group relative bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-900 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-black/5 dark:hover:shadow-white/5"
     >
       <Link to={`/product/${product.id}`} className="block aspect-[4/5] overflow-hidden bg-gray-100 dark:bg-gray-900">
-        <img
+        <LazyImage
           src={product.images[0]}
           alt={product.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-          referrerPolicy="no-referrer"
         />
         {product.isLimited && (
           <div className="absolute top-4 left-4 bg-black text-white text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest">

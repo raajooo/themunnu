@@ -1,9 +1,10 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, Settings, LogOut, Menu, X, Tags } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Settings, LogOut, Menu, X, Tags, Users } from "lucide-react";
 import { useState } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 import { toast } from "react-hot-toast";
+import { motion, AnimatePresence } from "motion/react";
 
 export default function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -21,6 +22,7 @@ export default function AdminLayout() {
     { path: "/admin/products", icon: Package, label: "Products" },
     { path: "/admin/categories", icon: Tags, label: "Categories" },
     { path: "/admin/orders", icon: ShoppingCart, label: "Orders" },
+    { path: "/admin/users", icon: Users, label: "Users" },
     { path: "/admin/settings", icon: Settings, label: "Settings" },
   ];
 
@@ -81,7 +83,17 @@ export default function AdminLayout() {
         </header>
 
         <div className="p-8">
-          <Outlet />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
     </div>

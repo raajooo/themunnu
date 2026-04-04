@@ -4,7 +4,7 @@ import { auth } from "../firebase";
 import { signInWithCustomToken } from "firebase/auth";
 import { motion } from "motion/react";
 import { toast } from "react-hot-toast";
-import { Phone, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
+import { Phone, Lock, ArrowRight, Loader2, Eye, EyeOff, Mail } from "lucide-react";
 
 import { User } from "../types";
 
@@ -13,7 +13,7 @@ interface LoginProps {
 }
 
 export default function Login({ user }: LoginProps) {
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [identifier, setIdentifier] = useState(""); // Can be email or phone
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -27,8 +27,8 @@ export default function Login({ user }: LoginProps) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (phoneNumber.length < 10) {
-      toast.error("Please enter a valid phone number");
+    if (!identifier.trim()) {
+      toast.error("Please enter your email or phone number");
       return;
     }
 
@@ -37,7 +37,7 @@ export default function Login({ user }: LoginProps) {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, password })
+        body: JSON.stringify({ identifier, password })
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -56,6 +56,8 @@ export default function Login({ user }: LoginProps) {
     }
   };
 
+  const isEmail = identifier.includes("@");
+
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-20">
       <motion.div 
@@ -65,19 +67,22 @@ export default function Login({ user }: LoginProps) {
       >
         <div className="text-center mb-10">
           <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">Welcome Back</h1>
-          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Login with your phone and password</p>
+          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Login with your email/phone and password</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="relative">
-            <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            {isEmail ? (
+              <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            ) : (
+              <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            )}
             <input 
-              type="tel" 
-              placeholder="Phone Number" 
+              type="text" 
+              placeholder="Email or Phone Number" 
               className="w-full pl-14 pr-6 py-5 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold text-lg"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
-              maxLength={10}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
             />
           </div>

@@ -42,7 +42,7 @@ export default function Footer() {
               <li><Link to="/orders" className="hover:text-black dark:hover:text-white transition-colors">Track Order</Link></li>
               <li><Link to="/shipping" className="hover:text-black dark:hover:text-white transition-colors">Shipping Policy</Link></li>
               <li><Link to="/returns" className="hover:text-black dark:hover:text-white transition-colors">Returns & Exchanges</Link></li>
-              <li><Link to="/contact" className="hover:text-black dark:hover:text-white transition-colors">Contact Us</Link></li>
+              <li><button onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))} className="hover:text-black dark:hover:text-white transition-colors text-left w-full">Contact Us</button></li>
             </ul>
           </div>
         </div>
