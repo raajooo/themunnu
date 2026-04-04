@@ -1,13 +1,14 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import axios from "axios";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import dotenv from "dotenv";
 import { createRequire } from "module";
+import Razorpay from "razorpay";
+import crypto from "crypto";
 
 const require = createRequire(import.meta.url);
 const firebaseConfig = require("./firebase-applet-config.json");
@@ -54,7 +55,11 @@ const auth = admin.auth();
 const firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 
 const JWT_SECRET = process.env.JWT_SECRET || "munnu-secret-key-123";
-const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_live_SZP0qjeVAeHesZ",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "1aSgGVDpydTCYZfhFMvm3QyE"
+});
 
 const app = express();
 app.use(express.json());
@@ -79,30 +84,11 @@ app.post("/api/auth/send-otp", async (req, res) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   
   try {
-    if (FAST2SMS_API_KEY && FAST2SMS_API_KEY.trim()) {
-      const response = await axios({
-        method: 'post',
-        url: 'https://www.fast2sms.com/dev/bulkV2',
-        headers: {
-          'authorization': FAST2SMS_API_KEY.trim(),
-          'Content-Type': 'application/json'
-        },
-        data: {
-          route: 'otp',
-          variables_values: otp,
-          numbers: cleanedPhone
-        }
-      });
-      
-      if (response.data.return === false) {
-        return res.status(400).json({ error: response.data.message || "SMS provider error" });
-      }
-    } else {
-      console.log(`[MOCK] OTP ${otp} to ${cleanedPhone}`);
-    }
+    // Fast2SMS system removed. OTP is mocked for development.
+    console.log(`[MOCK] OTP ${otp} to ${cleanedPhone}`);
 
     const otpToken = jwt.sign({ phoneNumber: cleanedPhone, otp }, JWT_SECRET, { expiresIn: "5m" });
-    res.json({ success: true, otpToken, message: "OTP sent successfully" });
+    res.json({ success: true, otpToken, message: "OTP sent successfully (Mocked)" });
   } catch (error: any) {
     console.error("OTP Error:", error);
     res.status(500).json({ error: "Failed to send OTP" });
@@ -205,6 +191,49 @@ app.post("/api/auth/reset-password", async (req, res) => {
   } catch (error) {
     console.error("Reset Password Error:", error);
     res.status(400).json({ error: "Reset failed or OTP expired" });
+  }
+});
+
+// --- PAYMENT ROUTES ---
+
+// 1. Create Razorpay Order
+app.post("/api/payment/create-razorpay-order", async (req, res) => {
+  const { amount, currency = "INR", receipt } = req.body;
+  
+  try {
+    const options = {
+      amount: Math.round(amount * 100), // Razorpay expects amount in paise
+      currency,
+      receipt: receipt || `receipt_${Date.now()}`,
+    };
+
+    const order = await razorpay.orders.create(options);
+    res.json({ success: true, order });
+  } catch (error: any) {
+    console.error("Razorpay Order Error:", error);
+    res.status(500).json({ error: "Failed to create payment order", details: error.message });
+  }
+});
+
+// 2. Verify Razorpay Payment
+app.post("/api/payment/verify-razorpay-payment", async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+  try {
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "1aSgGVDpydTCYZfhFMvm3QyE")
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature === razorpay_signature) {
+      res.json({ success: true, message: "Payment verified successfully" });
+    } else {
+      res.status(400).json({ success: false, error: "Invalid payment signature" });
+    }
+  } catch (error: any) {
+    console.error("Razorpay Verification Error:", error);
+    res.status(500).json({ error: "Payment verification failed", details: error.message });
   }
 });
 

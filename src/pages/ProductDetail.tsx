@@ -282,16 +282,39 @@ export default function ProductDetail() {
           <div className="space-y-4 mb-12">
             <button 
               onClick={() => {
-                if (!selectedSize) return;
+                if (!selectedSize) {
+                  toast.error("Please select a size first");
+                  return;
+                }
                 addToCart(product, selectedSize, 1);
               }}
-              disabled={!selectedSize}
-              className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity disabled:opacity-30 flex items-center justify-center"
+              className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity flex items-center justify-center"
             >
               <ShoppingBag className="mr-3" size={20} />
               Add to Cart
             </button>
-            <button className="w-full py-5 bg-transparent border-2 border-black dark:border-white text-black dark:text-white font-black text-sm uppercase tracking-[0.2em] rounded-full hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all">
+            <button 
+              onClick={() => {
+                if (!selectedSize) {
+                  toast.error("Please select a size first");
+                  return;
+                }
+                navigate("/checkout", { 
+                  state: { 
+                    directPurchase: {
+                      productId: product.id,
+                      name: product.name,
+                      price: product.price,
+                      image: product.images?.[0] || "",
+                      size: selectedSize,
+                      quantity: 1,
+                      brand: product.brand
+                    }
+                  } 
+                });
+              }}
+              className="w-full py-5 bg-transparent border-2 border-black dark:border-white text-black dark:text-white font-black text-sm uppercase tracking-[0.2em] rounded-full hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
+            >
               Buy Now
             </button>
           </div>

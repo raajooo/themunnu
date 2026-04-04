@@ -1,24 +1,38 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate, Navigate, useLocation } from "react-router-dom";
 import { useCart } from "../hooks/useCart";
-import { User, Address } from "../types";
+import { User, Address, OrderItem } from "../types";
 import { formatCurrency } from "../lib/utils";
 import { collection, addDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { toast } from "react-hot-toast";
-import { motion } from "motion/react";
-import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home } from "lucide-react";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 interface CheckoutProps {
   user: User | null;
 }
 
 export default function Checkout({ user }: CheckoutProps) {
-  const { items, totalPrice, clearCart } = useCart();
+  const { items: cartItems, totalPrice: cartTotalPrice, clearCart } = useCart();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [isCodEnabled, setIsCodEnabled] = useState(true);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'failed'>('idle');
+  const [countdown, setCountdown] = useState(5);
+
+  // Handle direct purchase (Buy Now)
+  const directPurchase = location.state?.directPurchase as OrderItem | undefined;
+  const items = directPurchase ? [directPurchase] : cartItems;
+  const totalPrice = directPurchase ? directPurchase.price * directPurchase.quantity : cartTotalPrice;
   
   const [address, setAddress] = useState<Address>({
     id: Date.now().toString(),
@@ -57,27 +71,123 @@ export default function Checkout({ user }: CheckoutProps) {
 
     setLoading(true);
     try {
-      const orderData = {
-        userId: user.uid,
-        items,
-        totalAmount: totalPrice,
-        paymentMethod,
-        paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid', // Simplified for now
-        orderStatus: 'pending',
-        address,
-        createdAt: new Date().toISOString(),
-      };
+      if (paymentMethod === 'razorpay') {
+        // 1. Create Razorpay Order on server
+        const orderRes = await fetch("/api/payment/create-razorpay-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: totalPrice, receipt: `order_${Date.now()}` })
+        });
+        const orderData = await orderRes.json();
 
-      const orderRef = await addDoc(collection(db, "orders"), orderData);
-      
-      toast.success("Order placed successfully!");
-      clearCart();
-      navigate(`/track/${orderRef.id}`);
-    } catch (error) {
+        if (!orderRes.ok) throw new Error(orderData.error || "Failed to create payment order");
+
+        // 2. Open Razorpay Checkout
+        const options = {
+          key: "rzp_live_SZP0qjeVAeHesZ", // Provided by user
+          amount: orderData.order.amount,
+          currency: orderData.order.currency,
+          name: "The Munnu",
+          description: "Sneaker Purchase",
+          order_id: orderData.order.id,
+          handler: async (response: any) => {
+            try {
+              // 3. Verify payment on server
+              const verifyRes = await fetch("/api/payment/verify-razorpay-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature
+                })
+              });
+              const verifyData = await verifyRes.json();
+
+              if (verifyRes.ok && verifyData.success) {
+                // 4. Save order to Firestore
+                const finalOrderData = {
+                  userId: user.uid,
+                  items,
+                  totalAmount: totalPrice,
+                  paymentMethod: 'razorpay',
+                  paymentStatus: 'paid',
+                  razorpayOrderId: response.razorpay_order_id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  orderStatus: 'pending',
+                  address,
+                  createdAt: new Date().toISOString(),
+                };
+
+                await addDoc(collection(db, "orders"), finalOrderData);
+                
+                if (!directPurchase) clearCart();
+                setPaymentStatus('success');
+                
+                // Start countdown for redirect
+                let count = 5;
+                const timer = setInterval(() => {
+                  count -= 1;
+                  setCountdown(count);
+                  if (count === 0) {
+                    clearInterval(timer);
+                    navigate("/");
+                  }
+                }, 1000);
+              } else {
+                setPaymentStatus('failed');
+              }
+            } catch (error) {
+              console.error("Verification error:", error);
+              setPaymentStatus('failed');
+            }
+          },
+          prefill: {
+            name: address.name,
+            contact: address.phone,
+            email: user.email || ""
+          },
+          theme: {
+            color: "#000000"
+          },
+          modal: {
+            ondismiss: () => {
+              setLoading(false);
+              toast.error("Payment cancelled");
+            }
+          }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', function (response: any) {
+          console.error("Payment failed:", response.error);
+          setPaymentStatus('failed');
+        });
+        rzp.open();
+      } else {
+        // Cash on Delivery
+        const orderData = {
+          userId: user.uid,
+          items,
+          totalAmount: totalPrice,
+          paymentMethod: 'cod',
+          paymentStatus: 'pending',
+          orderStatus: 'pending',
+          address,
+          createdAt: new Date().toISOString(),
+        };
+
+        const orderRef = await addDoc(collection(db, "orders"), orderData);
+        
+        toast.success("Order placed successfully!");
+        if (!directPurchase) clearCart();
+        navigate(`/track/${orderRef.id}`);
+      }
+    } catch (error: any) {
       console.error("Order error:", error);
-      toast.error("Failed to place order. Please try again.");
+      toast.error(error.message || "Failed to place order. Please try again.");
     } finally {
-      setLoading(false);
+      if (paymentMethod !== 'razorpay') setLoading(false);
     }
   };
 
@@ -266,6 +376,59 @@ export default function Checkout({ user }: CheckoutProps) {
           </div>
         </div>
       </div>
+
+      {/* Payment Status Popups */}
+      <AnimatePresence>
+        {paymentStatus !== 'idle' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-white dark:bg-gray-950 rounded-[3rem] p-12 text-center shadow-2xl"
+            >
+              {paymentStatus === 'success' ? (
+                <>
+                  <div className="w-24 h-24 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center mx-auto mb-8">
+                    <CheckCircle2 size={48} />
+                  </div>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase mb-4">Payment Confirmed</h2>
+                  <p className="text-gray-500 font-bold mb-8">Your order has been placed successfully. Thank you for shopping with Munnu!</p>
+                  <div className="space-y-4">
+                    <div className="text-xs font-black uppercase tracking-widest text-gray-400">
+                      Redirecting to home in {countdown}s...
+                    </div>
+                    <button 
+                      onClick={() => navigate("/")}
+                      className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-widest rounded-full flex items-center justify-center"
+                    >
+                      <Home className="mr-2" size={18} />
+                      Go Home Now
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-8">
+                    <XCircle size={48} />
+                  </div>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase mb-4">Payment Failed</h2>
+                  <p className="text-gray-500 font-bold mb-8">Something went wrong with your transaction. Please try again or use a different method.</p>
+                  <button 
+                    onClick={() => {
+                      setPaymentStatus('idle');
+                      setLoading(false);
+                    }}
+                    className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-widest rounded-full"
+                  >
+                    Try Again
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

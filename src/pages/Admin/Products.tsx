@@ -62,6 +62,45 @@ export default function AdminProducts() {
     }
   };
 
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    setUploading(true);
+    const newImages: string[] = [...(formData.images || [])];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 2MB)`);
+        continue;
+      }
+
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        newImages.push(base64);
+      } catch (error) {
+        toast.error(`Failed to read ${file.name}`);
+      }
+    }
+
+    setFormData({ ...formData, images: newImages });
+    setUploading(false);
+  };
+
+  const removeImage = (index: number) => {
+    const newImages = [...(formData.images || [])];
+    newImages.splice(index, 1);
+    setFormData({ ...formData, images: newImages });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -297,15 +336,41 @@ export default function AdminProducts() {
                   </div>
 
                   <div className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Image URLs (One per line)</label>
-                      <textarea 
-                        required
-                        placeholder="https://example.com/image1.jpg"
-                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-xs min-h-[120px]"
-                        value={formData.images?.join("\n")}
-                        onChange={(e) => setFormData({...formData, images: e.target.value.split("\n").filter(i => i.trim())})}
-                      />
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Product Images</label>
+                      <div className="grid grid-cols-3 gap-4">
+                        {formData.images?.map((img, idx) => (
+                          <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden group border border-gray-100 dark:border-gray-900">
+                            <img src={img} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <button 
+                              type="button"
+                              onClick={() => removeImage(idx)}
+                              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        <label className="aspect-square rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center cursor-pointer hover:border-black dark:hover:border-white transition-colors group">
+                          {uploading ? (
+                            <Loader2 className="animate-spin text-gray-400" size={24} />
+                          ) : (
+                            <>
+                              <Upload className="text-gray-400 group-hover:text-black dark:group-hover:text-white transition-colors" size={24} />
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-2">Upload</span>
+                            </>
+                          )}
+                          <input 
+                            type="file" 
+                            multiple 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={handleImageUpload}
+                            disabled={uploading}
+                          />
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Recommended: Square images, max 2MB each.</p>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Sizes (Comma separated)</label>

@@ -9,8 +9,9 @@ interface NavbarProps {
 }
 
 export default function Navbar({ user }: NavbarProps) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'menu' | 'search'>('menu');
+  const [isSearchOpen, setIsSearchOpen] = useState(false); // For desktop search
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
@@ -18,8 +19,18 @@ export default function Navbar({ user }: NavbarProps) {
     e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/shop?q=${encodeURIComponent(searchQuery.trim())}`);
+      setIsMobileMenuOpen(false);
       setIsSearchOpen(false);
       setSearchQuery("");
+    }
+  };
+
+  const toggleMobileMenu = (tab: 'menu' | 'search') => {
+    if (isMobileMenuOpen && activeTab === tab) {
+      setIsMobileMenuOpen(false);
+    } else {
+      setActiveTab(tab);
+      setIsMobileMenuOpen(true);
     }
   };
 
@@ -76,7 +87,7 @@ export default function Navbar({ user }: NavbarProps) {
               <button 
                 onClick={() => {
                   setIsSearchOpen(!isSearchOpen);
-                  setIsMenuOpen(false);
+                  setIsMobileMenuOpen(false);
                 }}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors relative z-10"
               >
@@ -86,28 +97,21 @@ export default function Navbar({ user }: NavbarProps) {
             
             <button 
               className="sm:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors"
-              onClick={() => {
-                setIsSearchOpen(!isSearchOpen);
-                setIsMenuOpen(false);
-              }}
+              onClick={() => toggleMobileMenu('search')}
             >
               <Search size={20} />
             </button>
             <Link to="/cart" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors relative">
               <ShoppingCart size={20} />
-              {/* Cart Badge would go here */}
             </Link>
             <Link to={user ? "/profile" : "/login"} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors">
               <UserIcon size={20} />
             </Link>
             <button 
               className="md:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors"
-              onClick={() => {
-                setIsMenuOpen(!isMenuOpen);
-                setIsSearchOpen(false);
-              }}
+              onClick={() => toggleMobileMenu('menu')}
             >
-              {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              {isMobileMenuOpen && activeTab === 'menu' ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
         </div>
@@ -115,38 +119,61 @@ export default function Navbar({ user }: NavbarProps) {
 
       {/* Mobile Menu */}
       <AnimatePresence>
-        {(isMenuOpen || isSearchOpen) && (
+        {isMobileMenuOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 overflow-hidden"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="md:hidden bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 overflow-hidden shadow-xl"
           >
-            <div className="px-4 pt-2 pb-6 space-y-4">
-              {isSearchOpen && (
-                <form onSubmit={handleSearch} className="relative">
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Search products..."
-                    className="w-full pl-12 pr-4 py-4 bg-gray-100 dark:bg-gray-900 rounded-2xl text-lg font-bold focus:outline-none"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                </form>
-              )}
-              {isMenuOpen && (
-                <>
-                  {user?.role === 'admin' && (
-                    <Link to="/admin" className="block text-lg font-black text-purple-600" onClick={() => setIsMenuOpen(false)}>ADMIN PANEL</Link>
-                  )}
-                  <Link to="/shop" className="block text-lg font-bold" onClick={() => setIsMenuOpen(false)}>SHOP</Link>
-                  <Link to="/shop?category=trending" className="block text-lg font-bold" onClick={() => setIsMenuOpen(false)}>TRENDING</Link>
-                  <Link to="/shop?category=limited" className="block text-lg font-bold" onClick={() => setIsMenuOpen(false)}>LIMITED</Link>
-                  <Link to="/orders" className="block text-lg font-bold" onClick={() => setIsMenuOpen(false)}>MY ORDERS</Link>
-                </>
-              )}
+            <div className="px-4 py-6 space-y-6">
+              {/* Tab Switcher */}
+              <div className="flex p-1 bg-gray-100 dark:bg-gray-900 rounded-2xl">
+                <button 
+                  onClick={() => setActiveTab('menu')}
+                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'menu' ? 'bg-white dark:bg-black shadow-sm' : 'text-gray-400'}`}
+                >
+                  Menu
+                </button>
+                <button 
+                  onClick={() => setActiveTab('search')}
+                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'search' ? 'bg-white dark:bg-black shadow-sm' : 'text-gray-400'}`}
+                >
+                  Search
+                </button>
+              </div>
+
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, x: activeTab === 'menu' ? -20 : 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: activeTab === 'menu' ? 20 : -20 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+              >
+                {activeTab === 'search' ? (
+                  <form onSubmit={handleSearch} className="relative">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Search products..."
+                      className="w-full pl-12 pr-4 py-4 bg-gray-100 dark:bg-gray-900 rounded-2xl text-lg font-bold focus:outline-none"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    {user?.role === 'admin' && (
+                      <Link to="/admin" className="block text-lg font-black text-purple-600" onClick={() => setIsMobileMenuOpen(false)}>ADMIN PANEL</Link>
+                    )}
+                    <Link to="/shop" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>SHOP</Link>
+                    <Link to="/shop?category=trending" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>TRENDING</Link>
+                    <Link to="/shop?category=limited" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>LIMITED</Link>
+                    <Link to="/orders" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>MY ORDERS</Link>
+                  </div>
+                )}
+              </motion.div>
             </div>
           </motion.div>
         )}
