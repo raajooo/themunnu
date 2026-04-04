@@ -32,7 +32,8 @@ export default function Login() {
         toast.success("Logged in successfully!");
         navigate("/profile");
       } else {
-        toast.error(data.error || data.details || "Login failed. Please check your credentials.");
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "Login failed");
+        toast.error(errorMsg);
       }
     } catch (error: any) {
       console.error("Login Error:", error);

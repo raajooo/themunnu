@@ -46,7 +46,8 @@ export default function Register() {
         toast.success("Registration successful!");
         navigate("/");
       } else {
-        toast.error(data.error || data.details || "Registration failed. Please try again.");
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "Registration failed");
+        toast.error(errorMsg);
       }
     } catch (error: any) {
       console.error("Registration Error:", error);
