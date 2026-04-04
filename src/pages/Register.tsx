@@ -4,10 +4,12 @@ import { auth } from "../firebase";
 import { signInWithCustomToken } from "firebase/auth";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "react-hot-toast";
-import { Phone, User, Mail, Lock, ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
+import { Phone, User, Mail, Lock, ShieldCheck, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 
 export default function Register() {
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
     phoneNumber: "",
     fullName: "",
@@ -108,24 +110,38 @@ export default function Register() {
           <div className="relative">
             <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
             <input 
-              type="password" 
+              type={showPassword ? "text" : "password"} 
               placeholder="Create Password" 
-              className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+              className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
               value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
           </div>
           <div className="relative">
             <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
             <input 
-              type="password" 
+              type={showConfirmPassword ? "text" : "password"} 
               placeholder="Confirm Password" 
-              className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+              className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
               value={formData.confirmPassword}
               onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            >
+              {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
           </div>
           <button 
             type="submit" 

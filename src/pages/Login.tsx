@@ -4,11 +4,12 @@ import { auth } from "../firebase";
 import { signInWithCustomToken } from "firebase/auth";
 import { motion } from "motion/react";
 import { toast } from "react-hot-toast";
-import { Phone, Lock, ArrowRight, Loader2 } from "lucide-react";
+import { Phone, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -71,13 +72,20 @@ export default function Login() {
           <div className="relative">
             <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
             <input 
-              type="password" 
+              type={showPassword ? "text" : "password"} 
               placeholder="Password" 
-              className="w-full pl-14 pr-6 py-5 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold text-lg"
+              className="w-full pl-14 pr-14 py-5 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold text-lg"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
           </div>
           <div className="flex justify-end">
             <Link to="/forgot-password" title="Forgot Password" className="text-xs font-bold text-gray-400 uppercase tracking-widest hover:text-black dark:hover:text-white transition-colors">
