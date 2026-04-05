@@ -12,6 +12,7 @@ import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import LazyImage from "../components/LazyImage";
 import ProductCard from "../components/ProductCard";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -26,17 +27,8 @@ export default function ProductDetail() {
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - left) / width) * 100;
-    const y = ((e.clientY - top) / height) * 100;
-    setZoomPos({ x, y });
-  };
 
   useEffect(() => {
     const fetchRelatedProducts = async (category: string, currentId: string) => {
@@ -226,58 +218,55 @@ export default function ProductDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
         {/* Image Gallery */}
         <div className="space-y-6">
-          <div 
-            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-[2.5rem] overflow-hidden group cursor-none"
-            onMouseEnter={() => setIsZoomed(true)}
-            onMouseLeave={() => setIsZoomed(false)}
-            onMouseMove={handleMouseMove}
-          >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentImage}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="w-full h-full"
+          <div className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-[2.5rem] overflow-hidden group">
+            <TransformWrapper
+              initialScale={1}
+              minScale={1}
+              maxScale={5}
+              centerOnInit={true}
+              wheel={{ disabled: true }}
+              pinch={{ step: 5 }}
+              doubleTap={{ step: 2 }}
+              onZoomStart={() => {
+                document.body.style.overflow = 'hidden';
+                document.body.style.touchAction = 'none';
+              }}
+              onZoomStop={() => {
+                document.body.style.overflow = 'auto';
+                document.body.style.touchAction = 'auto';
+              }}
+              onPanningStart={() => {
+                document.body.style.overflow = 'hidden';
+                document.body.style.touchAction = 'none';
+              }}
+              onPanningStop={() => {
+                document.body.style.overflow = 'auto';
+                document.body.style.touchAction = 'auto';
+              }}
+            >
+              <TransformComponent
+                wrapperClassName="!w-full !h-full"
+                contentClassName="!w-full !h-full"
               >
-                <motion.img
-                  src={product.images?.[currentImage] || ""}
-                  alt={product.name}
-                  referrerPolicy="no-referrer"
-                  animate={{
-                    scale: isZoomed ? 2.2 : 1,
-                    x: isZoomed ? (50 - zoomPos.x) * 1.2 : 0,
-                    y: isZoomed ? (50 - zoomPos.y) * 1.2 : 0,
-                  }}
-                  transition={{ type: "spring", stiffness: 150, damping: 25 }}
-                  className="w-full h-full object-cover"
-                  style={{
-                    transformOrigin: "center",
-                  }}
-                />
-              </motion.div>
-            </AnimatePresence>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentImage}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full h-full"
+                  >
+                    <img
+                      src={product.images?.[currentImage] || ""}
+                      alt={product.name}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover select-none pointer-events-none"
+                    />
+                  </motion.div>
+                </AnimatePresence>
+              </TransformComponent>
+            </TransformWrapper>
             
-            {/* Custom Cursor for Zoom */}
-            <AnimatePresence>
-              {isZoomed && (
-                <motion.div
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  className="fixed pointer-events-none z-50 w-12 h-12 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center text-white mix-blend-difference"
-                  style={{
-                    left: zoomPos.x + "%",
-                    top: zoomPos.y + "%",
-                    transform: "translate(-50%, -50%)",
-                    position: "absolute"
-                  }}
-                >
-                  <Maximize2 size={20} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
             <button 
@@ -618,25 +607,46 @@ export default function ProductDetail() {
             <div className="relative w-full h-full flex items-center justify-center">
               <button 
                 onClick={() => setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1))}
-                className="absolute left-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10 hidden md:block"
+                className="absolute left-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-20 hidden md:block"
               >
                 <ChevronLeft size={32} />
               </button>
 
-              <motion.img
-                key={currentImage}
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                src={product.images?.[currentImage] || ""}
-                alt={product.name}
-                referrerPolicy="no-referrer"
-                className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl"
-              />
+              <div className="w-full h-full flex items-center justify-center">
+                <TransformWrapper
+                  initialScale={1}
+                  minScale={1}
+                  maxScale={5}
+                  centerOnInit={true}
+                  doubleTap={{ step: 2 }}
+                >
+                  <TransformComponent
+                    wrapperClassName="!w-full !h-full"
+                    contentClassName="!w-full !h-full flex items-center justify-center"
+                  >
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={currentImage}
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        className="w-full h-full flex items-center justify-center"
+                      >
+                        <img
+                          src={product.images?.[currentImage] || ""}
+                          alt={product.name}
+                          referrerPolicy="no-referrer"
+                          className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl select-none pointer-events-none"
+                        />
+                      </motion.div>
+                    </AnimatePresence>
+                  </TransformComponent>
+                </TransformWrapper>
+              </div>
 
               <button 
                 onClick={() => setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0))}
-                className="absolute right-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10 hidden md:block"
+                className="absolute right-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-20 hidden md:block"
               >
                 <ChevronRight size={32} />
               </button>
