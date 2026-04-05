@@ -8,6 +8,7 @@ import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import { User as UserIcon, MapPin, Package, LogOut, Plus, Trash2, Edit2, X, Loader2, ShieldCheck, MessageCircle, AlertTriangle } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
+import { lookupPincode } from "../lib/pincode";
 
 interface ProfileProps {
   user: User | null;
@@ -93,6 +94,20 @@ export default function Profile({ user }: ProfileProps) {
     setIsAddingAddress(false);
     setEditingAddress(null);
     setNewAddress({ name: "", phone: "", pincode: "", address: "", city: "", state: "" });
+  };
+
+  const handlePincodeChange = async (pincode: string) => {
+    setNewAddress(prev => ({ ...prev, pincode }));
+    if (pincode.length === 6) {
+      const data = await lookupPincode(pincode);
+      if (data) {
+        setNewAddress(prev => ({
+          ...prev,
+          city: data.city,
+          state: data.state
+        }));
+      }
+    }
   };
 
   const handleAddAddress = async (e: React.FormEvent) => {
@@ -386,9 +401,10 @@ export default function Profile({ user }: ProfileProps) {
                         <input 
                           type="text" 
                           required
+                          maxLength={6}
                           className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
                           value={newAddress.pincode}
-                          onChange={(e) => setNewAddress({...newAddress, pincode: e.target.value})}
+                          onChange={(e) => handlePincodeChange(e.target.value)}
                         />
                       </div>
                     </div>

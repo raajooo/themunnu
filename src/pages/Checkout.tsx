@@ -8,6 +8,7 @@ import { db } from "../firebase";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home } from "lucide-react";
+import { lookupPincode } from "../lib/pincode";
 
 declare global {
   interface Window {
@@ -70,6 +71,20 @@ export default function Checkout({ user }: CheckoutProps) {
 
   if (!user) return <Navigate to="/login" />;
   if (items.length === 0) return <Navigate to="/shop" />;
+
+  const handlePincodeChange = async (pincode: string) => {
+    setAddress(prev => ({ ...prev, pincode, id: Date.now().toString() }));
+    if (pincode.length === 6) {
+      const data = await lookupPincode(pincode);
+      if (data) {
+        setAddress(prev => ({
+          ...prev,
+          city: data.city,
+          state: data.state
+        }));
+      }
+    }
+  };
 
   const handlePlaceOrder = async () => {
     // Validation
@@ -310,9 +325,10 @@ export default function Checkout({ user }: CheckoutProps) {
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Pincode</label>
                   <input 
                     type="text" 
+                    maxLength={6}
                     className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
                     value={address.pincode}
-                    onChange={(e) => setAddress({...address, pincode: e.target.value, id: Date.now().toString()})}
+                    onChange={(e) => handlePincodeChange(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
