@@ -68,6 +68,12 @@ export default function AdminCategories() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file type. Please upload an image (JPG, PNG, WEBP or GIF).");
+      return;
+    }
+
     if (file.size > 300 * 1024) {
       toast.error("Image is too large (max 300KB for Firestore storage)");
       return;

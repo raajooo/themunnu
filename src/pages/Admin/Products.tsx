@@ -114,9 +114,17 @@ export default function AdminProducts() {
 
     setUploading(true);
     const newImages: string[] = [...(formData.images || [])];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      
+      // Check file type
+      if (!allowedTypes.includes(file.type)) {
+        toast.error(`${file.name} is not a valid image. Please use JPG, PNG, WEBP or GIF.`);
+        continue;
+      }
+
       // Reduced to 300KB because Firestore document limit is 1MB and base64 adds ~33% overhead
       if (file.size > 300 * 1024) {
         toast.error(`${file.name} is too large (max 300KB for Firestore storage)`);
