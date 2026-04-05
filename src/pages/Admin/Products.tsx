@@ -8,6 +8,7 @@ import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
+import imageCompression from 'browser-image-compression';
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -116,6 +117,13 @@ export default function AdminProducts() {
     const newImages: string[] = [...(formData.images || [])];
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+    const compressionOptions = {
+      maxSizeMB: 0.3, // Target 300KB to stay safe within Firestore 1MB doc limit
+      maxWidthOrHeight: 1280,
+      useWebWorker: true,
+      initialQuality: 0.8
+    };
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
@@ -125,22 +133,25 @@ export default function AdminProducts() {
         continue;
       }
 
-      // Reduced to 300KB because Firestore document limit is 1MB and base64 adds ~33% overhead
-      if (file.size > 300 * 1024) {
-        toast.error(`${file.name} is too large (max 300KB for Firestore storage)`);
+      // Allow up to 5MB for initial selection, but compress it
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 5MB allowed for upload, will be compressed)`);
         continue;
       }
 
       try {
+        const compressedFile = await imageCompression(file, compressionOptions);
+        
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(compressedFile);
         });
         newImages.push(base64);
       } catch (error) {
-        toast.error(`Failed to read ${file.name}`);
+        console.error("Compression error:", error);
+        toast.error(`Failed to process ${file.name}`);
       }
     }
 

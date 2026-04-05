@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import { Product } from "../types";
 import { formatCurrency } from "../lib/utils";
-import { ShoppingCart, Heart, Star } from "lucide-react";
+import { ShoppingCart, Heart, Star, Share2 } from "lucide-react";
 import LazyImage from "./LazyImage";
+import { toast } from "react-hot-toast";
 
 interface ProductCardProps {
   product: Product;
@@ -12,6 +13,14 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product }: ProductCardProps) {
+  const handleShare = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = `${window.location.origin}/product/${product.id}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard!");
+  };
+
   return (
     <motion.div
       whileHover={{ y: -5 }}
@@ -41,9 +50,18 @@ export default function ProductCard({ product }: ProductCardProps) {
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
             {product.brand}
           </span>
-          <button className="text-gray-300 hover:text-red-500 transition-colors">
-            <Heart size={16} />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={handleShare}
+              className="text-gray-300 hover:text-black dark:hover:text-white transition-colors p-1"
+              title="Share"
+            >
+              <Share2 size={16} />
+            </button>
+            <button className="text-gray-300 hover:text-red-500 transition-colors p-1">
+              <Heart size={16} />
+            </button>
+          </div>
         </div>
         
         <Link to={`/product/${product.id}`} className="block">

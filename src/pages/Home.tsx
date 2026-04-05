@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
-import { collection, query, where, limit, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, limit, getDocs, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Banner, Category } from "../types";
 import ProductCard from "../components/ProductCard";
@@ -16,63 +16,51 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Check session storage for cached data
-        const cachedData = sessionStorage.getItem("home_data");
-        if (cachedData) {
-          const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
-          // Cache for 5 minutes
-          if (Date.now() - timestamp < 5 * 60 * 1000) {
-            setFeaturedProducts(featured);
-            setTrendingProducts(trending);
-            setCategories(cats);
-            setBanners(bans);
-            setLoading(false);
-            return;
-          }
-        }
-
-        const productsRef = collection(db, "products");
-        
-        // Featured
-        const featuredQuery = query(productsRef, where("isFeatured", "==", true), limit(4));
-        const featuredSnap = await getDocs(featuredQuery);
-        const featured = featuredSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+    // Check session storage for cached data
+    const cachedData = sessionStorage.getItem("home_data");
+    if (cachedData) {
+      const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
+      // Cache for 5 minutes
+      if (Date.now() - timestamp < 5 * 60 * 1000) {
         setFeaturedProducts(featured);
-
-        // Trending
-        const trendingQuery = query(productsRef, where("isTrending", "==", true), limit(4));
-        const trendingSnap = await getDocs(trendingQuery);
-        const trending = trendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
         setTrendingProducts(trending);
-
-        // Categories
-        const categoriesSnap = await getDocs(collection(db, "categories"));
-        const cats = categoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
         setCategories(cats);
-
-        // Banners
-        const bannersSnap = await getDocs(collection(db, "banners"));
-        const bans = bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner));
         setBanners(bans);
-
-        // Cache the data
-        sessionStorage.setItem("home_data", JSON.stringify({
-          featured,
-          trending,
-          cats,
-          bans,
-          timestamp: Date.now()
-        }));
-      } catch (error) {
-        console.error("Error fetching home data:", error);
-      } finally {
         setLoading(false);
       }
-    };
+    }
 
-    fetchData();
+    const productsRef = collection(db, "products");
+    
+    // Use onSnapshot for real-time updates and better caching
+    const qFeatured = query(productsRef, where("isFeatured", "==", true), limit(4));
+    const qTrending = query(productsRef, where("isTrending", "==", true), limit(4));
+    const qCategories = collection(db, "categories");
+    const qBanners = collection(db, "banners");
+
+    const unsubFeatured = onSnapshot(qFeatured, (snap) => {
+      setFeaturedProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    });
+
+    const unsubTrending = onSnapshot(qTrending, (snap) => {
+      setTrendingProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    });
+
+    const unsubCats = onSnapshot(qCategories, (snap) => {
+      setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+    });
+
+    const unsubBanners = onSnapshot(qBanners, (snap) => {
+      setBanners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner)));
+      setLoading(false);
+    });
+
+    return () => {
+      unsubFeatured();
+      unsubTrending();
+      unsubCats();
+      unsubBanners();
+    };
   }, []);
 
   return (

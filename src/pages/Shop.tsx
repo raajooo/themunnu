@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Category } from "../types";
 import ProductCard from "../components/ProductCard";
-import { SlidersHorizontal, ChevronDown, Search } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, Search, Loader2 } from "lucide-react";
 
 export default function Shop() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -44,22 +44,33 @@ export default function Shop() {
 
   useEffect(() => {
     const fetchProducts = async () => {
-      setLoading(true);
-      try {
-        const productsRef = collection(db, "products");
-        let q = query(productsRef, orderBy("createdAt", "desc"));
-
-        if (categoryParam) {
-          if (categoryParam === "trending") {
-            q = query(productsRef, where("isTrending", "==", true));
-          } else if (categoryParam === "limited") {
-            q = query(productsRef, where("isLimited", "==", true));
-          } else {
-            q = query(productsRef, where("category", "==", categoryParam));
-          }
+      // Check cache first
+      const cacheKey = `shop_products_${categoryParam || 'all'}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < 2 * 60 * 1000) { // 2 min cache
+          setProducts(data);
+          setLoading(false);
+          // Still fetch in background to update
         }
+      }
 
-        const snap = await getDocs(q);
+      const productsRef = collection(db, "products");
+      let q = query(productsRef, orderBy("createdAt", "desc"));
+
+      if (categoryParam) {
+        if (categoryParam === "trending") {
+          q = query(productsRef, where("isTrending", "==", true));
+        } else if (categoryParam === "limited") {
+          q = query(productsRef, where("isLimited", "==", true));
+        } else {
+          q = query(productsRef, where("category", "==", categoryParam));
+        }
+      }
+
+      // Use onSnapshot for real-time and better SDK caching
+      const unsubscribe = onSnapshot(q, (snap) => {
         let results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
 
         // Client-side filtering for search, price, and brand
@@ -77,11 +88,19 @@ export default function Shop() {
         results = results.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
 
         setProducts(results);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      } finally {
         setLoading(false);
-      }
+        
+        // Update cache
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          data: results,
+          timestamp: Date.now()
+        }));
+      }, (error) => {
+        console.error("Error fetching products:", error);
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
     };
 
     fetchProducts();

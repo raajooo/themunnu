@@ -19,6 +19,7 @@ export default function Navbar({ user }: NavbarProps) {
   const [suggestions, setSuggestions] = useState<Product[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -27,10 +28,17 @@ export default function Navbar({ user }: NavbarProps) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
       }
+      if (isMobileMenuOpen && mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+        // Check if the click was on the toggle button itself (to avoid double toggle)
+        const target = event.target as HTMLElement;
+        if (!target.closest('button[aria-label="toggle-menu"]')) {
+          setIsMobileMenuOpen(false);
+        }
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isMobileMenuOpen]);
 
   useEffect(() => {
     const fetchSuggestions = async () => {
@@ -208,6 +216,7 @@ export default function Navbar({ user }: NavbarProps) {
             <button 
               className="md:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors"
               onClick={() => toggleMobileMenu('menu')}
+              aria-label="toggle-menu"
             >
               {isMobileMenuOpen && activeTab === 'menu' ? <X size={20} /> : <Menu size={20} />}
             </button>
@@ -219,6 +228,7 @@ export default function Navbar({ user }: NavbarProps) {
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
+            ref={mobileMenuRef}
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}

@@ -7,6 +7,7 @@ import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
+import imageCompression from 'browser-image-compression';
 
 export default function AdminCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -74,22 +75,33 @@ export default function AdminCategories() {
       return;
     }
 
-    if (file.size > 300 * 1024) {
-      toast.error("Image is too large (max 300KB for Firestore storage)");
+    // Allow up to 5MB for initial selection, but compress it
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image is too large (max 5MB allowed for upload, will be compressed)");
       return;
     }
 
     setUploading(true);
     try {
+      const compressionOptions = {
+        maxSizeMB: 0.3, // Target 300KB
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+        initialQuality: 0.8
+      };
+
+      const compressedFile = await imageCompression(file, compressionOptions);
+      
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(compressedFile);
       });
       setFormData({ ...formData, imageUrl: base64 });
     } catch (error) {
-      toast.error("Failed to read image");
+      console.error("Compression error:", error);
+      toast.error("Failed to process image");
     } finally {
       setUploading(false);
     }

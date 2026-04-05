@@ -110,6 +110,20 @@ export default function ProductDetail() {
     fetchReviews();
   }, [id]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!product?.images) return;
+      if (e.key === "ArrowLeft") {
+        setCurrentImage(prev => (prev > 0 ? prev - 1 : product.images.length - 1));
+      } else if (e.key === "ArrowRight") {
+        setCurrentImage(prev => (prev < product.images.length - 1 ? prev + 1 : 0));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [product]);
+
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser || !id || !product) {
@@ -244,27 +258,42 @@ export default function ProductDetail() {
                 document.body.style.touchAction = 'auto';
               }}
             >
-              <TransformComponent
-                wrapperClassName="!w-full !h-full"
-                contentClassName="!w-full !h-full"
-              >
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={currentImage}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="w-full h-full"
-                  >
-                    <img
-                      src={product.images?.[currentImage] || ""}
-                      alt={product.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover select-none pointer-events-none"
-                    />
-                  </motion.div>
-                </AnimatePresence>
-              </TransformComponent>
+              {({ zoomOut, state }) => (
+                <TransformComponent
+                  wrapperClassName="!w-full !h-full"
+                  contentClassName="!w-full !h-full"
+                >
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={currentImage}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="w-full h-full cursor-grab active:cursor-grabbing"
+                      onPanEnd={(_, info) => {
+                        // Only swipe if not zoomed in
+                        if (!state || state.scale > 1) return;
+                        
+                        const threshold = 50;
+                        if (info.offset.x > threshold) {
+                          // Swipe Right -> Previous Image
+                          setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1));
+                        } else if (info.offset.x < -threshold) {
+                          // Swipe Left -> Next Image
+                          setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0));
+                        }
+                      }}
+                    >
+                      <img
+                        src={product.images?.[currentImage] || ""}
+                        alt={product.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover select-none pointer-events-none"
+                      />
+                    </motion.div>
+                  </AnimatePresence>
+                </TransformComponent>
+              )}
             </TransformWrapper>
             
             <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -274,7 +303,7 @@ export default function ProductDetail() {
                 e.stopPropagation();
                 setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1));
               }}
-              className="absolute left-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10"
+              className="absolute left-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full md:opacity-0 md:group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10 hidden sm:flex items-center justify-center"
             >
               <ChevronLeft size={20} />
             </button>
@@ -283,7 +312,7 @@ export default function ProductDetail() {
                 e.stopPropagation();
                 setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0));
               }}
-              className="absolute right-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10"
+              className="absolute right-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full md:opacity-0 md:group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10 hidden sm:flex items-center justify-center"
             >
               <ChevronRight size={20} />
             </button>
