@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { User } from "./types";
 import { handleFirestoreError, OperationType } from "./lib/firestore-errors";
@@ -39,32 +39,42 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    let unsubscribeSnapshot: (() => void) | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Listen to user document changes in real-time
-        unsubscribeSnapshot = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
+        // Check session storage first
+        const cachedUser = sessionStorage.getItem(`user_${firebaseUser.uid}`);
+        if (cachedUser) {
+          setUser(JSON.parse(cachedUser));
+        }
+
+        try {
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          const docSnap = await getDoc(userDocRef);
+          
           if (docSnap.exists()) {
-            setUser(docSnap.data() as User);
+            const userData = docSnap.data() as User;
+            setUser(userData);
+            sessionStorage.setItem(`user_${firebaseUser.uid}`, JSON.stringify(userData));
           } else {
-            setUser({
+            const newUser: User = {
               uid: firebaseUser.uid,
               phoneNumber: firebaseUser.phoneNumber || "",
               role: "user",
               addresses: [],
               createdAt: new Date().toISOString(),
-            });
+            };
+            setUser(newUser);
+            // We don't cache new user until it's saved in DB (usually happens during registration)
           }
-        }, (error) => {
+        } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
-        });
-      } else {
-        if (unsubscribeSnapshot) {
-          unsubscribeSnapshot();
-          unsubscribeSnapshot = null;
         }
+      } else {
         setUser(null);
+        // Clear all user-related session storage on logout
+        Object.keys(sessionStorage).forEach(key => {
+          if (key.startsWith('user_')) sessionStorage.removeItem(key);
+        });
       }
     });
 
@@ -104,7 +114,6 @@ export default function App() {
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeSnapshot) unsubscribeSnapshot();
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('dragstart', handleDragStart);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { doc, getDoc, collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, runTransaction } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, orderBy, getDocs, addDoc, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { Product, Review } from "../types";
 import { useCart } from "../hooks/useCart";
@@ -20,6 +20,7 @@ export default function ProductDetail() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSize, setSelectedSize] = useState("");
+  const [quantity, setQuantity] = useState(1);
   const [currentImage, setCurrentImage] = useState(0);
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState("");
@@ -38,10 +39,19 @@ export default function ProductDetail() {
     const fetchProduct = async () => {
       if (!id) return;
       try {
+        // Check session storage for product cache
+        const cachedProduct = sessionStorage.getItem(`product_${id}`);
+        if (cachedProduct) {
+          setProduct(JSON.parse(cachedProduct));
+          setLoading(false);
+        }
+
         const docRef = doc(db, "products", id);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          setProduct({ id: snap.id, ...snap.data() } as Product);
+          const productData = { id: snap.id, ...snap.data() } as Product;
+          setProduct(productData);
+          sessionStorage.setItem(`product_${id}`, JSON.stringify(productData));
         }
       } catch (error) {
         console.error("Error fetching product:", error);
@@ -49,21 +59,24 @@ export default function ProductDetail() {
         setLoading(false);
       }
     };
+
+    const fetchReviews = async () => {
+      if (!id) return;
+      try {
+        const q = query(
+          collection(db, "reviews"),
+          where("productId", "==", id),
+          orderBy("createdAt", "desc")
+        );
+        const snap = await getDocs(q);
+        setReviews(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `reviews?productId=${id}`);
+      }
+    };
+
     fetchProduct();
-
-    // Real-time reviews
-    const q = query(
-      collection(db, "reviews"),
-      where("productId", "==", id),
-      orderBy("createdAt", "desc")
-    );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setReviews(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `reviews?productId=${id}`);
-    });
-
-    return () => unsubscribe();
+    fetchReviews();
   }, [id]);
 
   const handleSubmitReview = async (e: React.FormEvent) => {
@@ -262,27 +275,48 @@ export default function ProductDetail() {
             </p>
           </div>
 
-          <div className="mb-10">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-black uppercase tracking-widest">Select Size (UK)</h3>
-              <button className="text-xs font-bold underline underline-offset-4">Size Guide</button>
+          <div className="mb-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xs font-black uppercase tracking-widest">Select Size (UK)</h3>
+                <button className="text-xs font-bold underline underline-offset-4">Size Guide</button>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                {(product.sizes?.length || 0) > 0 ? (
+                  product.sizes?.map(size => (
+                    <button 
+                      key={size}
+                      onClick={() => setSelectedSize(size)}
+                      className={`py-4 rounded-xl font-bold text-sm transition-all border-2 ${selectedSize === size ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'bg-transparent border-gray-100 dark:border-gray-900 hover:border-gray-300 dark:hover:border-gray-700'}`}
+                    >
+                      {size}
+                    </button>
+                  ))
+                ) : (
+                  <div className="col-span-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl text-center">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No sizes available</p>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              {(product.sizes?.length || 0) > 0 ? (
-                product.sizes?.map(size => (
-                  <button 
-                    key={size}
-                    onClick={() => setSelectedSize(size)}
-                    className={`py-4 rounded-xl font-bold text-sm transition-all border-2 ${selectedSize === size ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'bg-transparent border-gray-100 dark:border-gray-900 hover:border-gray-300 dark:hover:border-gray-700'}`}
-                  >
-                    {size}
-                  </button>
-                ))
-              ) : (
-                <div className="col-span-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl text-center">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No sizes available for this product</p>
-                </div>
-              )}
+
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-widest mb-4">Quantity</h3>
+              <div className="flex items-center space-x-4 bg-gray-50 dark:bg-gray-900 p-2 rounded-2xl w-fit">
+                <button 
+                  onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
+                  className="w-10 h-10 flex items-center justify-center bg-white dark:bg-black rounded-xl font-bold hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  -
+                </button>
+                <span className="w-12 text-center font-black text-lg">{quantity}</span>
+                <button 
+                  onClick={() => setQuantity(prev => Math.min(10, prev + 1))}
+                  className="w-10 h-10 flex items-center justify-center bg-white dark:bg-black rounded-xl font-bold hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  +
+                </button>
+              </div>
             </div>
           </div>
 
@@ -293,12 +327,13 @@ export default function ProductDetail() {
                   toast.error("Please select a size first");
                   return;
                 }
-                addToCart(product, selectedSize, 1);
+                addToCart(product, selectedSize, quantity);
+                toast.success(`${quantity} ${quantity > 1 ? 'items' : 'item'} added to cart`);
               }}
               className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity flex items-center justify-center"
             >
               <ShoppingBag className="mr-3" size={20} />
-              Add to Cart
+              Add to Cart {quantity > 1 && `(${quantity})`}
             </button>
             <button 
               onClick={() => {
@@ -314,7 +349,7 @@ export default function ProductDetail() {
                       price: product.price,
                       image: product.images?.[0] || "",
                       size: selectedSize,
-                      quantity: 1,
+                      quantity: quantity,
                       brand: product.brand
                     }
                   } 

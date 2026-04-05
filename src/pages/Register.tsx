@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { auth } from "../firebase";
-import { signInWithCustomToken } from "firebase/auth";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, getDocs, collection, query, where } from "firebase/firestore";
+import { db } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "react-hot-toast";
 import { Phone, User, Mail, Lock, ShieldCheck, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
+import { checkRateLimit } from "../lib/rate-limit";
 
 import { User as UserType } from "../types";
 
@@ -16,6 +19,7 @@ export default function Register({ user }: RegisterProps) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [honeypot, setHoneypot] = useState(""); // Bot protection
   const [formData, setFormData] = useState({
     phoneNumber: "",
     fullName: "",
@@ -34,7 +38,21 @@ export default function Register({ user }: RegisterProps) {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.phoneNumber.length < 10) {
+
+    // Bot protection: if honeypot is filled, ignore the request
+    if (honeypot) {
+      console.warn("Bot detected via honeypot");
+      return;
+    }
+
+    // Rate limiting: max 3 attempts per minute for registration
+    if (!checkRateLimit("register", 3, 60000)) {
+      toast.error("Too many registration attempts. Please wait a minute.");
+      return;
+    }
+
+    const phone = formData.phoneNumber.replace(/\D/g, "").slice(-10);
+    if (phone.length < 10) {
       toast.error("Please enter a valid phone number");
       return;
     }
@@ -49,23 +67,45 @@ export default function Register({ user }: RegisterProps) {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData)
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        await signInWithCustomToken(auth, data.customToken);
-        toast.success("Registration successful!");
-        navigate("/");
-      } else {
-        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "Registration failed");
-        toast.error(errorMsg);
+      // Check if phone number already exists in Firestore (since it's our primary identifier)
+      const phoneSnap = await getDocs(query(collection(db, "users"), where("phoneNumber", "==", phone)));
+      if (!phoneSnap.empty) {
+        toast.error("Phone number already registered");
+        setLoading(false);
+        return;
       }
+
+      // Use email if provided, otherwise use phone-based email
+      const email = formData.email ? formData.email.toLowerCase() : `${phone}@munnu.com`;
+
+      // 1. Create Firebase Auth User
+      const userCredential = await createUserWithEmailAndPassword(auth, email, formData.password);
+      const firebaseUser = userCredential.user;
+
+      // 2. Create User Profile in Firestore
+      const adminEmail = "raajooothakur0@gmail.com";
+      const adminPhone = "9193731911";
+      const isAdmin = (phone === adminPhone || (formData.email && formData.email.toLowerCase() === adminEmail));
+
+      const userDoc: UserType = {
+        uid: firebaseUser.uid,
+        phoneNumber: phone,
+        displayName: formData.fullName,
+        email: formData.email ? formData.email.toLowerCase() : "",
+        role: isAdmin ? "admin" : "user",
+        addresses: [],
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, "users", firebaseUser.uid), userDoc);
+      
+      toast.success("Registration successful!");
+      navigate("/");
     } catch (error: any) {
       console.error("Registration Error:", error);
-      toast.error(error.message || "Something went wrong");
+      let message = "Registration failed. Please try again.";
+      if (error.code === "auth/email-already-in-use") message = "Email already in use.";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -86,6 +126,18 @@ export default function Register({ user }: RegisterProps) {
         </div>
 
         <form onSubmit={handleRegister} className="space-y-4">
+          {/* Honeypot field - hidden from users but visible to bots */}
+          <div className="hidden" aria-hidden="true">
+            <input 
+              type="text" 
+              name="website" 
+              value={honeypot} 
+              onChange={(e) => setHoneypot(e.target.value)} 
+              tabIndex={-1} 
+              autoComplete="off" 
+            />
+          </div>
+
           <div className="relative">
             <User className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
             <input 

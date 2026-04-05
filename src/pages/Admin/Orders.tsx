@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, onSnapshot, updateDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, updateDoc, doc, query, orderBy } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { format } from "date-fns";
-import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package } from "lucide-react";
+import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package, RefreshCw } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 import { motion } from "motion/react";
@@ -12,58 +12,51 @@ import { motion } from "motion/react";
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [newOrderCount, setNewOrderCount] = useState(0);
   const [filter, setFilter] = useState<'all' | 'pending' | 'shipped' | 'delivered' | 'cancelled'>('all');
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const isFirstLoad = useRef(true);
+  const lastOrderCount = useRef(0);
 
-  useEffect(() => {
-    // Initialize notification sound - Subtle "Ping"
-    audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
-    audioRef.current.volume = 0.5;
-    
-    const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
-    
-    const unsubscribe = onSnapshot(q, (snap) => {
+  const fetchOrders = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
+    else setRefreshing(true);
+
+    try {
+      const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
       const newOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       
-      if (!isFirstLoad.current && snap.docChanges().some(change => change.type === 'added')) {
-        // New order arrived
-        const addedDocs = snap.docChanges().filter(change => change.type === 'added');
-        addedDocs.forEach(change => {
-          toast.success(`New Order Received! #${change.doc.id.slice(-8)}`, {
-            duration: 10000,
-            icon: '🔥',
-            style: {
-              borderRadius: '30px',
-              background: '#000',
-              color: '#fff',
-              padding: '24px',
-              fontWeight: '900',
-              textTransform: 'uppercase',
-              fontSize: '12px',
-              letterSpacing: '0.1em',
-              border: '2px solid rgba(255,255,255,0.1)',
-              boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.5)',
-            }
-          });
+      if (!isInitial && newOrders.length > lastOrderCount.current) {
+        const diff = newOrders.length - lastOrderCount.current;
+        toast.success(`${diff} New Order(s) Received!`, {
+          icon: '🔥',
         });
-        
-        // Play notification sound
-        audioRef.current?.play().catch(e => console.log("Audio play failed (Autoplay policy):", e));
-        setNewOrderCount(prev => prev + addedDocs.length);
+        audioRef.current?.play().catch(e => console.log("Audio play failed:", e));
+        setNewOrderCount(prev => prev + diff);
       }
       
       setOrders(newOrders);
-      setLoading(false);
-      isFirstLoad.current = false;
-    }, (error) => {
+      lastOrderCount.current = newOrders.length;
+    } catch (error) {
       handleFirestoreError(error, OperationType.GET, "orders");
+    } finally {
       setLoading(false);
-    });
+      setRefreshing(false);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    // Initialize notification sound
+    audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+    audioRef.current.volume = 0.5;
+    
+    fetchOrders(true);
+
+    // Auto refresh every 2 minutes to save quota but stay updated
+    const interval = setInterval(() => fetchOrders(), 120000);
+    return () => clearInterval(interval);
   }, []);
 
   const updateStatus = async (id: string, status: string) => {
@@ -391,6 +384,14 @@ export default function AdminOrders() {
           <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Manage customer fulfillment</p>
         </div>
         <div className="flex flex-wrap gap-4">
+          <button 
+            onClick={() => fetchOrders()}
+            disabled={refreshing}
+            className="flex items-center space-x-2 px-6 py-4 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-900 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-gray-900 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
+          </button>
           {newOrderCount > 0 && (
             <button 
               onClick={() => setNewOrderCount(0)}

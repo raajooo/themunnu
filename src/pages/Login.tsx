@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { auth } from "../firebase";
-import { signInWithCustomToken } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
 import { motion } from "motion/react";
 import { toast } from "react-hot-toast";
 import { Phone, Lock, ArrowRight, Loader2, Eye, EyeOff, Mail } from "lucide-react";
+import { checkRateLimit } from "../lib/rate-limit";
 
 import { User } from "../types";
 
@@ -15,6 +18,7 @@ interface LoginProps {
 export default function Login({ user }: LoginProps) {
   const [identifier, setIdentifier] = useState(""); // Can be email or phone
   const [password, setPassword] = useState("");
+  const [honeypot, setHoneypot] = useState(""); // Bot protection
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -27,6 +31,19 @@ export default function Login({ user }: LoginProps) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Bot protection: if honeypot is filled, ignore the request
+    if (honeypot) {
+      console.warn("Bot detected via honeypot");
+      return;
+    }
+
+    // Rate limiting: max 5 attempts per minute
+    if (!checkRateLimit("login", 5, 60000)) {
+      toast.error("Too many login attempts. Please wait a minute.");
+      return;
+    }
+
     if (!identifier.trim()) {
       toast.error("Please enter your email or phone number");
       return;
@@ -34,23 +51,20 @@ export default function Login({ user }: LoginProps) {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password })
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        await signInWithCustomToken(auth, data.customToken);
-        toast.success("Logged in successfully!");
-        navigate("/profile");
-      } else {
-        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "Login failed");
-        toast.error(errorMsg);
-      }
+      // If it's a phone number, convert to email format for Firebase Auth
+      const isEmail = identifier.includes("@");
+      const email = isEmail ? identifier.toLowerCase() : `${identifier.replace(/\D/g, "").slice(-10)}@munnu.com`;
+
+      await signInWithEmailAndPassword(auth, email, password);
+      
+      toast.success("Logged in successfully!");
+      navigate("/profile");
     } catch (error: any) {
       console.error("Login Error:", error);
-      toast.error(error.message || "Something went wrong. Please try again later.");
+      let message = "Login failed. Please check your credentials.";
+      if (error.code === "auth/user-not-found") message = "User not found.";
+      if (error.code === "auth/wrong-password") message = "Incorrect password.";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -71,6 +85,18 @@ export default function Login({ user }: LoginProps) {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
+          {/* Honeypot field - hidden from users but visible to bots */}
+          <div className="hidden" aria-hidden="true">
+            <input 
+              type="text" 
+              name="website" 
+              value={honeypot} 
+              onChange={(e) => setHoneypot(e.target.value)} 
+              tabIndex={-1} 
+              autoComplete="off" 
+            />
+          </div>
+
           <div className="relative">
             {isEmail ? (
               <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
