@@ -19,6 +19,10 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Profile from "./pages/Profile";
 import OrderHistory from "./pages/OrderHistory";
 import OrderTracking from "./pages/OrderTracking";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+import ShippingPolicy from "./pages/ShippingPolicy";
+import ReturnExchange from "./pages/ReturnExchange";
 import AdminDashboard from "./pages/Admin/Dashboard";
 import AdminProducts from "./pages/Admin/Products";
 import AdminCategories from "./pages/Admin/Categories";
@@ -126,6 +130,10 @@ export default function App() {
           <Route path="/profile" element={<Profile user={user} />} />
           <Route path="/orders" element={<OrderHistory user={user} />} />
           <Route path="/track/:id" element={<OrderTracking />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          <Route path="/shipping-policy" element={<ShippingPolicy />} />
+          <Route path="/return-exchange" element={<ReturnExchange />} />
         </Route>
 
         {/* Admin Routes */}

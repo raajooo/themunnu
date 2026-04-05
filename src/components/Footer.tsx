@@ -40,8 +40,8 @@ export default function Footer() {
             <h4 className="text-sm font-bold uppercase tracking-widest mb-4">Support</h4>
             <ul className="space-y-2 text-sm text-gray-500">
               <li><Link to="/orders" className="hover:text-black dark:hover:text-white transition-colors">Track Order</Link></li>
-              <li><Link to="/shipping" className="hover:text-black dark:hover:text-white transition-colors">Shipping Policy</Link></li>
-              <li><Link to="/returns" className="hover:text-black dark:hover:text-white transition-colors">Returns & Exchanges</Link></li>
+              <li><Link to="/shipping-policy" className="hover:text-black dark:hover:text-white transition-colors">Shipping Policy</Link></li>
+              <li><Link to="/return-exchange" className="hover:text-black dark:hover:text-white transition-colors">Returns & Exchanges</Link></li>
               <li><button onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))} className="hover:text-black dark:hover:text-white transition-colors text-left w-full">Contact Us</button></li>
             </ul>
           </div>
@@ -50,8 +50,8 @@ export default function Footer() {
         <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-900 flex flex-col md:flex-row justify-between items-center text-xs text-gray-400 space-y-4 md:space-y-0">
           <p>© 2026 MUNNU. All rights reserved.</p>
           <div className="flex space-x-6">
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
+            <Link to="/privacy-policy" className="hover:text-black dark:hover:text-white transition-colors">Privacy Policy</Link>
+            <Link to="/terms-of-service" className="hover:text-black dark:hover:text-white transition-colors">Terms of Service</Link>
           </div>
         </div>
       </div>

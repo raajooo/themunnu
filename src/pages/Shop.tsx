@@ -26,8 +26,15 @@ export default function Shop() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
+        const cachedCats = sessionStorage.getItem("shop_categories");
+        if (cachedCats) {
+          setCategories(JSON.parse(cachedCats));
+          return;
+        }
         const snap = await getDocs(collection(db, "categories"));
-        setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+        const cats = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+        setCategories(cats);
+        sessionStorage.setItem("shop_categories", JSON.stringify(cats));
       } catch (error) {
         console.error("Error fetching categories:", error);
       }

@@ -56,9 +56,13 @@ export default function ChatBot() {
           parts: [{ text: response }]
         }]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat error:", error);
-      toast.error("Failed to get response. Please try again.");
+      if (error.message?.includes("API key")) {
+        toast.error("Chatbot is currently unavailable. Please contact support via email.");
+      } else {
+        toast.error("Failed to get response. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -148,9 +152,6 @@ export default function ChatBot() {
         className={`p-5 rounded-full shadow-2xl flex items-center justify-center transition-all ${isOpen ? 'bg-red-500 text-white rotate-90' : 'bg-black dark:bg-white text-white dark:text-black'}`}
       >
         {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
-        {!isOpen && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-ping" />
-        )}
       </motion.button>
     </div>
   );

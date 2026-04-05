@@ -175,7 +175,7 @@ export default function ProductDetail() {
         {/* Image Gallery */}
         <div className="space-y-6">
           <div 
-            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-3xl overflow-hidden group cursor-zoom-in"
+            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-3xl overflow-hidden group cursor-crosshair"
             onMouseEnter={() => setIsZoomed(true)}
             onMouseLeave={() => setIsZoomed(false)}
             onMouseMove={handleMouseMove}
@@ -188,13 +188,20 @@ export default function ProductDetail() {
                 exit={{ opacity: 0 }}
                 className="w-full h-full"
               >
-                <LazyImage
+                <motion.img
                   src={product.images?.[currentImage] || ""}
                   alt={product.name}
-                  className={`w-full h-full object-cover transition-transform duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'}`}
-                  style={isZoomed ? {
-                    transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`
-                  } : {}}
+                  referrerPolicy="no-referrer"
+                  animate={{
+                    scale: isZoomed ? 2.5 : 1,
+                    x: isZoomed ? (50 - zoomPos.x) * 1.5 : 0,
+                    y: isZoomed ? (50 - zoomPos.y) * 1.5 : 0,
+                  }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  className="w-full h-full object-cover"
+                  style={{
+                    transformOrigin: "center",
+                  }}
                 />
               </motion.div>
             </AnimatePresence>

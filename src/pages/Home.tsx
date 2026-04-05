@@ -18,25 +18,53 @@ export default function Home() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Check session storage for cached data
+        const cachedData = sessionStorage.getItem("home_data");
+        if (cachedData) {
+          const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
+          // Cache for 5 minutes
+          if (Date.now() - timestamp < 5 * 60 * 1000) {
+            setFeaturedProducts(featured);
+            setTrendingProducts(trending);
+            setCategories(cats);
+            setBanners(bans);
+            setLoading(false);
+            return;
+          }
+        }
+
         const productsRef = collection(db, "products");
         
         // Featured
         const featuredQuery = query(productsRef, where("isFeatured", "==", true), limit(4));
         const featuredSnap = await getDocs(featuredQuery);
-        setFeaturedProducts(featuredSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+        const featured = featuredSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        setFeaturedProducts(featured);
 
         // Trending
         const trendingQuery = query(productsRef, where("isTrending", "==", true), limit(4));
         const trendingSnap = await getDocs(trendingQuery);
-        setTrendingProducts(trendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+        const trending = trendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        setTrendingProducts(trending);
 
         // Categories
         const categoriesSnap = await getDocs(collection(db, "categories"));
-        setCategories(categoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+        const cats = categoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+        setCategories(cats);
 
         // Banners
         const bannersSnap = await getDocs(collection(db, "banners"));
-        setBanners(bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner)));
+        const bans = bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner));
+        setBanners(bans);
+
+        // Cache the data
+        sessionStorage.setItem("home_data", JSON.stringify({
+          featured,
+          trending,
+          cats,
+          bans,
+          timestamp: Date.now()
+        }));
       } catch (error) {
         console.error("Error fetching home data:", error);
       } finally {
