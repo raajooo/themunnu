@@ -42,7 +42,7 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
          request.auth.token.phone_number == "+919193731911" ||
          request.auth.token.phone_number == "9193731911" ||
-         (request.auth.token.email == "raajooothakur0@gmail.com" && request.auth.token.email_verified == true));
+         request.auth.token.email == "raajooothakur0@gmail.com");
     }
 
     function isValidUser(data) {
@@ -79,8 +79,15 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isAdmin();
+      allow read: if true; // Allow everyone to read settings (like isCodEnabled, isCouponSystemEnabled)
       allow write: if isAdmin();
+    }
+
+    match /coupons/{couponId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow update: if (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usageCount', 'totalDiscountGenerated'])) || isAdmin();
+      allow create, delete: if isAdmin();
     }
 
     match /banners/{bannerId} {

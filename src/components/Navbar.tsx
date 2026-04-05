@@ -1,5 +1,5 @@
-import { Link, useNavigate } from "react-router-dom";
-import { ShoppingCart, User as UserIcon, Search, Menu, X, ArrowRight } from "lucide-react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { ShoppingCart, User as UserIcon, Search, Menu, X, ArrowRight, ChevronLeft } from "lucide-react";
 import React, { useState, useEffect, useRef } from "react";
 import { User, Product } from "../types";
 import { motion, AnimatePresence } from "motion/react";
@@ -20,6 +20,7 @@ export default function Navbar({ user }: NavbarProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -82,10 +83,11 @@ export default function Navbar({ user }: NavbarProps) {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
+    <>
+      <nav className="sticky top-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          <div className="flex items-center">
+          <div className="flex items-center space-x-4">
             <Link to="/" className="text-2xl font-black tracking-tighter">
               MUNNU
             </Link>
@@ -313,5 +315,6 @@ export default function Navbar({ user }: NavbarProps) {
         )}
       </AnimatePresence>
     </nav>
+    </>
   );
 }

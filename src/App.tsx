@@ -27,6 +27,7 @@ import AdminDashboard from "./pages/Admin/Dashboard";
 import AdminProducts from "./pages/Admin/Products";
 import AdminCategories from "./pages/Admin/Categories";
 import AdminOrders from "./pages/Admin/Orders";
+import AdminCoupons from "./pages/Admin/Coupons";
 import AdminSettings from "./pages/Admin/Settings";
 import AdminUsers from "./pages/Admin/Users";
 
@@ -34,6 +35,7 @@ import AdminUsers from "./pages/Admin/Users";
 import Layout from "./components/Layout";
 import AdminLayout from "./components/Admin/AdminLayout";
 import ScrollToTop from "./components/ScrollToTop";
+import FloatingBackButton from "./components/FloatingBackButton";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -124,6 +126,7 @@ export default function App() {
   return (
     <Router>
       <ScrollToTop />
+      <FloatingBackButton />
       <Toaster position="top-center" />
       <Routes>
         {/* Public Routes */}
@@ -150,6 +153,7 @@ export default function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="products" element={<AdminProducts />} />
           <Route path="categories" element={<AdminCategories />} />
+          <Route path="coupons" element={<AdminCoupons />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="settings" element={<AdminSettings />} />

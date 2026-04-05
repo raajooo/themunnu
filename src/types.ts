@@ -41,6 +41,8 @@ export interface Order {
   userId: string;
   items: OrderItem[];
   totalAmount: number;
+  discountAmount?: number;
+  couponCode?: string;
   paymentMethod: 'razorpay' | 'cod';
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
   orderStatus: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
@@ -48,6 +50,30 @@ export interface Order {
   trackingId?: string;
   deliveryEstimate?: string;
   createdAt: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  minOrderAmount: number;
+  maxDiscountAmount?: number;
+  isActive: boolean;
+  usageCount: number;
+  totalDiscountGenerated: number;
+  expiryDate?: string;
+  createdAt: string;
+}
+
+export interface Settings {
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
+  fast2smsApiKey?: string;
+  delhiveryApiKey?: string;
+  isCodEnabled: boolean;
+  isCouponSystemEnabled: boolean;
+  supportEmail: string;
 }
 
 export interface OrderItem {

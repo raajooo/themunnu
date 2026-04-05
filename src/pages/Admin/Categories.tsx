@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db, auth } from "../../firebase";
 import { Category } from "../../types";
-import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle, ShieldAlert } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
+import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 
 export default function AdminCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -35,16 +36,40 @@ export default function AdminCategories() {
     isLoading: false
   });
 
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
+
   useEffect(() => {
     fetchCategories();
+    
+    // Check if current user is admin in Firestore
+    const checkAdmin = async () => {
+      if (auth.currentUser) {
+        try {
+          const userDoc = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc")));
+          const currentUserDoc = userDoc.docs.find(d => d.id === auth.currentUser?.uid);
+          if (currentUserDoc && currentUserDoc.data().role === 'admin') {
+            setIsUserAdmin(true);
+          } else {
+            const email = auth.currentUser.email;
+            const phone = auth.currentUser.phoneNumber;
+            if (email === "raajooothakur0@gmail.com" || phone === "+919193731911") {
+              setIsUserAdmin(true);
+            }
+          }
+        } catch (error) {
+          console.error("Error checking admin status:", error);
+        }
+      }
+    };
+    checkAdmin();
   }, []);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Image is too large (max 2MB)");
+    if (file.size > 300 * 1024) {
+      toast.error("Image is too large (max 300KB for Firestore storage)");
       return;
     }
 
@@ -104,8 +129,24 @@ export default function AdminCategories() {
       }
       setIsModalOpen(false);
       fetchCategories();
-    } catch (error) {
-      toast.error("Failed to save category");
+    } catch (error: any) {
+      console.error("Error saving category:", error);
+      let errorMessage = "Failed to save category";
+      
+      if (error.code === 'permission-denied') {
+        errorMessage = "Permission denied: You must be an admin to perform this action. Check if your email is verified.";
+      } else if (error.message?.includes('too large') || error.code === 'invalid-argument') {
+        errorMessage = "Failed to save: The category data (likely image) is too large for Firestore (max 1MB per document). Try a smaller image.";
+      } else if (error.message) {
+        errorMessage = `Failed to save category: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
+      try {
+        handleFirestoreError(error, editingCategory ? OperationType.UPDATE : OperationType.CREATE, "categories");
+      } catch (e) {
+        // Already handled
+      }
     } finally {
       setLoading(false);
     }
@@ -160,6 +201,10 @@ export default function AdminCategories() {
         </div>
         <button 
           onClick={() => {
+            if (!isUserAdmin) {
+              toast.error("You don't have admin permissions to add categories.");
+              return;
+            }
             setEditingCategory(null);
             setFormData({ name: "", slug: "" });
             setIsModalOpen(true);
@@ -170,6 +215,20 @@ export default function AdminCategories() {
           <span>New Category</span>
         </button>
       </div>
+
+      {!isUserAdmin && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 p-6 rounded-[2rem] flex items-center space-x-4">
+          <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full text-red-600">
+            <ShieldAlert size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-black uppercase tracking-widest text-red-600">Admin Access Restricted</p>
+            <p className="text-xs font-medium text-red-500/80 uppercase tracking-widest mt-1">
+              Your account does not have write permissions. Please contact the owner or verify your email.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Category List */}
       <div className="bg-white dark:bg-gray-950 rounded-[3rem] border border-gray-100 dark:border-gray-900 overflow-hidden shadow-xl shadow-black/5">
@@ -195,7 +254,7 @@ export default function AdminCategories() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left min-w-[600px]">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
                 <th className="px-8 py-6">Image</th>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { toast } from "react-hot-toast";
-import { Shield, Save, Loader2, Database as DatabaseIcon, Trash2, AlertTriangle } from "lucide-react";
+import { Shield, Save, Loader2, Database as DatabaseIcon, Trash2, AlertTriangle, Tag } from "lucide-react";
 import ConfirmModal from "../../components/ConfirmModal";
 
 export default function AdminSettings() {
@@ -10,7 +10,9 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [settings, setSettings] = useState({
-    isCodEnabled: true
+    isCodEnabled: true,
+    isCouponSystemEnabled: false,
+    supportEmail: "support@munnu.com"
   });
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -76,23 +78,69 @@ export default function AdminSettings() {
       <form onSubmit={handleSave} className="space-y-8">
         {/* Payment Controls */}
         <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="p-3 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-2xl">
+          <div className="space-y-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-2xl">
+                  <Shield size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Cash on Delivery</h3>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enable or disable COD for all customers</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSettings({...settings, isCodEnabled: !settings.isCodEnabled})}
+                className={`w-16 h-8 rounded-full transition-all relative ${settings.isCodEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.isCodEnabled ? 'left-9' : 'left-1'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-8 border-t border-gray-50 dark:border-gray-900">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 text-purple-500 rounded-2xl">
+                  <Tag size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Coupon System</h3>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enable or disable the discount coupon system</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSettings({...settings, isCouponSystemEnabled: !settings.isCouponSystemEnabled})}
+                className={`w-16 h-8 rounded-full transition-all relative ${settings.isCouponSystemEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.isCouponSystemEnabled ? 'left-9' : 'left-1'}`} />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Support Settings */}
+        <section className="bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
+          <div className="space-y-6">
+            <div className="flex items-center space-x-4 mb-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl">
                 <Shield size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-black uppercase tracking-tight">Cash on Delivery</h3>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enable or disable COD for all customers</p>
+                <h3 className="text-xl font-black uppercase tracking-tight">Support Configuration</h3>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Manage customer support details</p>
               </div>
             </div>
-            <button 
-              type="button"
-              onClick={() => setSettings({...settings, isCodEnabled: !settings.isCodEnabled})}
-              className={`w-16 h-8 rounded-full transition-all relative ${settings.isCodEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
-            >
-              <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.isCodEnabled ? 'left-9' : 'left-1'}`} />
-            </button>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Support Email Address</label>
+              <input
+                type="email"
+                required
+                className="w-full px-8 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                value={settings.supportEmail}
+                onChange={(e) => setSettings({...settings, supportEmail: e.target.value})}
+              />
+            </div>
           </div>
         </section>
 

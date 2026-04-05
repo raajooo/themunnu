@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { MessageCircle, X, Send, Loader2, Bot, Sparkles, User } from "lucide-react";
 import { getChatResponse } from "../services/gemini";
 import { toast } from "react-hot-toast";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
 
 interface Message {
   role: "user" | "model";
@@ -19,9 +21,16 @@ export default function ChatBot() {
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchSettings = async () => {
+      const snap = await getDoc(doc(db, "settings", "global"));
+      if (snap.exists()) setSettings(snap.data());
+    };
+    fetchSettings();
+
     const handleOpen = () => setIsOpen(true);
     window.addEventListener('open-chatbot', handleOpen);
     return () => window.removeEventListener('open-chatbot', handleOpen);
@@ -59,7 +68,7 @@ export default function ChatBot() {
     } catch (error: any) {
       console.error("Chat error:", error);
       if (error.message?.includes("API key")) {
-        toast.error("Chatbot is currently unavailable. Please contact support via email.");
+        toast.error(`Chatbot is currently unavailable. Please contact support via email: ${settings?.supportEmail || 'support@munnu.com'}`);
       } else {
         toast.error("Failed to get response. Please try again.");
       }

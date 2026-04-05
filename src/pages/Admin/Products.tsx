@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db, auth } from "../../firebase";
 import { Product, Category } from "../../types";
 import { formatCurrency } from "../../lib/utils";
-import { Plus, Search, Edit2, Trash2, X, Upload, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Upload, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
+import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -46,9 +47,35 @@ export default function AdminProducts() {
     isLoading: false
   });
 
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
+
   useEffect(() => {
     fetchProducts();
     fetchCategories();
+    
+    // Check if current user is admin in Firestore
+    const checkAdmin = async () => {
+      if (auth.currentUser) {
+        try {
+          const userDoc = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc")));
+          // This is a bit inefficient, but we'll just check the current user's role
+          const currentUserDoc = userDoc.docs.find(d => d.id === auth.currentUser?.uid);
+          if (currentUserDoc && currentUserDoc.data().role === 'admin') {
+            setIsUserAdmin(true);
+          } else {
+            // Fallback to checking the email/phone if the doc isn't found or role isn't admin
+            const email = auth.currentUser.email;
+            const phone = auth.currentUser.phoneNumber;
+            if (email === "raajooothakur0@gmail.com" || phone === "+919193731911") {
+              setIsUserAdmin(true);
+            }
+          }
+        } catch (error) {
+          console.error("Error checking admin status:", error);
+        }
+      }
+    };
+    checkAdmin();
   }, []);
 
   const filteredProducts = products.filter(p => 
@@ -90,8 +117,9 @@ export default function AdminProducts() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error(`${file.name} is too large (max 2MB)`);
+      // Reduced to 300KB because Firestore document limit is 1MB and base64 adds ~33% overhead
+      if (file.size > 300 * 1024) {
+        toast.error(`${file.name} is too large (max 300KB for Firestore storage)`);
         continue;
       }
 
@@ -134,8 +162,24 @@ export default function AdminProducts() {
       }
       setIsModalOpen(false);
       fetchProducts();
-    } catch (error) {
-      toast.error("Failed to save product");
+    } catch (error: any) {
+      console.error("Error saving product:", error);
+      let errorMessage = "Failed to save product";
+      
+      if (error.code === 'permission-denied') {
+        errorMessage = "Permission denied: You must be an admin to perform this action. Check if your email is verified.";
+      } else if (error.message?.includes('too large') || error.code === 'invalid-argument') {
+        errorMessage = "Failed to save: The product data (likely images) is too large for Firestore (max 1MB per document). Try smaller images.";
+      } else if (error.message) {
+        errorMessage = `Failed to save product: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
+      try {
+        handleFirestoreError(error, editingProduct ? OperationType.UPDATE : OperationType.CREATE, "products");
+      } catch (e) {
+        // handleFirestoreError throws, but we already handled it with toast
+      }
     } finally {
       setLoading(false);
     }
@@ -238,6 +282,10 @@ export default function AdminProducts() {
         </div>
         <button 
           onClick={() => {
+            if (!isUserAdmin) {
+              toast.error("You don't have admin permissions to add products.");
+              return;
+            }
             setEditingProduct(null);
             setFormData({
               name: "", brand: "", price: 0, description: "", images: [], 
@@ -252,6 +300,20 @@ export default function AdminProducts() {
           <span>New Product</span>
         </button>
       </div>
+
+      {!isUserAdmin && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 p-6 rounded-[2rem] flex items-center space-x-4">
+          <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full text-red-600">
+            <ShieldAlert size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-black uppercase tracking-widest text-red-600">Admin Access Restricted</p>
+            <p className="text-xs font-medium text-red-500/80 uppercase tracking-widest mt-1">
+              Your account does not have write permissions. Please contact the owner or verify your email.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Product List */}
       <div className="bg-white dark:bg-gray-950 rounded-[3rem] border border-gray-100 dark:border-gray-900 overflow-hidden shadow-xl shadow-black/5">
@@ -277,7 +339,7 @@ export default function AdminProducts() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left min-w-[800px]">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
                 <th className="px-8 py-6 w-10">
@@ -467,7 +529,7 @@ export default function AdminProducts() {
                           />
                         </label>
                       </div>
-                      <p className="text-[10px] text-gray-400 font-medium">Recommended: Square images, max 2MB each.</p>
+                      <p className="text-[10px] text-gray-400 font-medium">Recommended: Square images, max 300KB each (Firestore limit).</p>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Sizes (Comma separated)</label>

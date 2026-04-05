@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Navigate, useLocation } from "react-router-dom";
 import { useCart } from "../hooks/useCart";
-import { User, Address, OrderItem } from "../types";
+import { User, Address, OrderItem, Coupon } from "../types";
 import { formatCurrency } from "../lib/utils";
-import { collection, addDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, getDoc, increment } from "firebase/firestore";
 import { db } from "../firebase";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
-import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home } from "lucide-react";
+import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home, Tag } from "lucide-react";
 import { lookupPincode } from "../lib/pincode";
 
 declare global {
@@ -34,6 +34,11 @@ export default function Checkout({ user }: CheckoutProps) {
   const directPurchase = location.state?.directPurchase as OrderItem | undefined;
   const items = directPurchase ? [directPurchase] : cartItems;
   const totalPrice = directPurchase ? directPurchase.price * directPurchase.quantity : cartTotalPrice;
+  
+  // Handle Coupon
+  const coupon = location.state?.coupon as Coupon | undefined;
+  const discountAmount = location.state?.discount as number || 0;
+  const finalTotal = totalPrice - discountAmount;
   
   const [address, setAddress] = useState<Address>({
     id: Date.now().toString(),
@@ -104,7 +109,7 @@ export default function Checkout({ user }: CheckoutProps) {
         const orderRes = await fetch("/api/payment/create-razorpay-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: totalPrice, receipt: `order_${Date.now()}` })
+          body: JSON.stringify({ amount: finalTotal, receipt: `order_${Date.now()}` })
         });
         const orderData = await orderRes.json();
 
@@ -137,7 +142,9 @@ export default function Checkout({ user }: CheckoutProps) {
                 const finalOrderData = {
                   userId: user.uid,
                   items,
-                  totalAmount: totalPrice,
+                  totalAmount: finalTotal,
+                  discountAmount,
+                  couponCode: coupon?.code,
                   paymentMethod: 'razorpay',
                   paymentStatus: 'paid',
                   razorpayOrderId: response.razorpay_order_id,
@@ -148,6 +155,14 @@ export default function Checkout({ user }: CheckoutProps) {
                 };
 
                 await addDoc(collection(db, "orders"), finalOrderData);
+                
+                // Update Coupon Stats
+                if (coupon) {
+                  await updateDoc(doc(db, "coupons", coupon.id), {
+                    usageCount: increment(1),
+                    totalDiscountGenerated: increment(discountAmount)
+                  });
+                }
                 
                 if (!directPurchase) clearCart();
                 setPaymentStatus('success');
@@ -197,7 +212,9 @@ export default function Checkout({ user }: CheckoutProps) {
         const orderData = {
           userId: user.uid,
           items,
-          totalAmount: totalPrice,
+          totalAmount: finalTotal,
+          discountAmount,
+          couponCode: coupon?.code,
           paymentMethod: 'cod',
           paymentStatus: 'pending',
           orderStatus: 'pending',
@@ -206,6 +223,14 @@ export default function Checkout({ user }: CheckoutProps) {
         };
 
         const orderRef = await addDoc(collection(db, "orders"), orderData);
+        
+        // Update Coupon Stats
+        if (coupon) {
+          await updateDoc(doc(db, "coupons", coupon.id), {
+            usageCount: increment(1),
+            totalDiscountGenerated: increment(discountAmount)
+          });
+        }
         
         toast.success("Order placed successfully!");
         if (!directPurchase) clearCart();
@@ -404,13 +429,24 @@ export default function Checkout({ user }: CheckoutProps) {
                 <span>Subtotal</span>
                 <span>{formatCurrency(totalPrice)}</span>
               </div>
+              
+              {coupon && (
+                <div className="flex justify-between text-sm font-bold text-green-500 uppercase tracking-widest">
+                  <div className="flex items-center">
+                    <Tag size={12} className="mr-1" />
+                    <span>Discount ({coupon.code})</span>
+                  </div>
+                  <span>-{formatCurrency(discountAmount)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between text-sm font-bold text-gray-500 uppercase tracking-widest">
                 <span>Shipping</span>
                 <span className="text-green-500">FREE</span>
               </div>
               <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-between items-center">
                 <span className="text-lg font-black uppercase tracking-tighter">Total</span>
-                <span className="text-3xl font-black">{formatCurrency(totalPrice)}</span>
+                <span className="text-3xl font-black">{formatCurrency(finalTotal)}</span>
               </div>
             </div>
 

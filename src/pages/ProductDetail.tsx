@@ -7,10 +7,11 @@ import { useCart } from "../hooks/useCart";
 import { formatCurrency } from "../lib/utils";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle } from "lucide-react";
+import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle, Maximize2, X, ArrowRight } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import LazyImage from "../components/LazyImage";
+import ProductCard from "../components/ProductCard";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -27,23 +28,60 @@ export default function ProductDetail() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-    const x = ((e.pageX - left - window.scrollX) / width) * 100;
-    const y = ((e.pageY - top - window.scrollY) / height) * 100;
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
     setZoomPos({ x, y });
   };
 
   useEffect(() => {
+    const fetchRelatedProducts = async (category: string, currentId: string) => {
+      try {
+        const q = query(
+          collection(db, "products"),
+          where("category", "==", category),
+          where("__name__", "!=", currentId),
+          orderBy("__name__"),
+          orderBy("createdAt", "desc")
+        );
+        // Note: Firestore requires a composite index for this query. 
+        // If it fails, we'll fall back to a simpler query.
+        const snap = await getDocs(q);
+        const related = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)).slice(0, 4);
+        setRelatedProducts(related);
+      } catch (error) {
+        console.warn("Composite index might be missing for complex related query, falling back to simple category query.");
+        try {
+          const simpleQ = query(
+            collection(db, "products"),
+            where("category", "==", category)
+          );
+          const simpleSnap = await getDocs(simpleQ);
+          const related = simpleSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Product))
+            .filter(p => p.id !== currentId)
+            .slice(0, 4);
+          setRelatedProducts(related);
+        } catch (err) {
+          console.error("Error fetching related products:", err);
+        }
+      }
+    };
+
     const fetchProduct = async () => {
       if (!id) return;
       try {
         // Check session storage for product cache
         const cachedProduct = sessionStorage.getItem(`product_${id}`);
         if (cachedProduct) {
-          setProduct(JSON.parse(cachedProduct));
+          const p = JSON.parse(cachedProduct);
+          setProduct(p);
           setLoading(false);
+          fetchRelatedProducts(p.category, id);
         }
 
         const docRef = doc(db, "products", id);
@@ -52,6 +90,7 @@ export default function ProductDetail() {
           const productData = { id: snap.id, ...snap.data() } as Product;
           setProduct(productData);
           sessionStorage.setItem(`product_${id}`, JSON.stringify(productData));
+          fetchRelatedProducts(productData.category, id);
         }
       } catch (error) {
         console.error("Error fetching product:", error);
@@ -188,7 +227,7 @@ export default function ProductDetail() {
         {/* Image Gallery */}
         <div className="space-y-6">
           <div 
-            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-3xl overflow-hidden group cursor-crosshair"
+            className="relative aspect-[4/5] bg-gray-100 dark:bg-gray-900 rounded-[2.5rem] overflow-hidden group cursor-none"
             onMouseEnter={() => setIsZoomed(true)}
             onMouseLeave={() => setIsZoomed(false)}
             onMouseMove={handleMouseMove}
@@ -206,11 +245,11 @@ export default function ProductDetail() {
                   alt={product.name}
                   referrerPolicy="no-referrer"
                   animate={{
-                    scale: isZoomed ? 2.5 : 1,
-                    x: isZoomed ? (50 - zoomPos.x) * 1.5 : 0,
-                    y: isZoomed ? (50 - zoomPos.y) * 1.5 : 0,
+                    scale: isZoomed ? 2.2 : 1,
+                    x: isZoomed ? (50 - zoomPos.x) * 1.2 : 0,
+                    y: isZoomed ? (50 - zoomPos.y) * 1.2 : 0,
                   }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  transition={{ type: "spring", stiffness: 150, damping: 25 }}
                   className="w-full h-full object-cover"
                   style={{
                     transformOrigin: "center",
@@ -219,17 +258,52 @@ export default function ProductDetail() {
               </motion.div>
             </AnimatePresence>
             
+            {/* Custom Cursor for Zoom */}
+            <AnimatePresence>
+              {isZoomed && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  className="fixed pointer-events-none z-50 w-12 h-12 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center text-white mix-blend-difference"
+                  style={{
+                    left: zoomPos.x + "%",
+                    top: zoomPos.y + "%",
+                    transform: "translate(-50%, -50%)",
+                    position: "absolute"
+                  }}
+                >
+                  <Maximize2 size={20} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
             <button 
-              onClick={() => setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1))}
-              className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 dark:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1));
+              }}
+              className="absolute left-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10"
             >
               <ChevronLeft size={20} />
             </button>
             <button 
-              onClick={() => setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0))}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 dark:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0));
+              }}
+              className="absolute right-6 top-1/2 -translate-y-1/2 p-4 bg-white/90 dark:bg-black/90 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10"
             >
               <ChevronRight size={20} />
+            </button>
+
+            <button 
+              onClick={() => setIsLightboxOpen(true)}
+              className="absolute bottom-6 right-6 p-4 bg-white/90 dark:bg-black/90 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 shadow-xl z-10"
+            >
+              <Maximize2 size={20} />
             </button>
           </div>
 
@@ -386,6 +460,31 @@ export default function ProductDetail() {
         </div>
       </div>
 
+      {/* Related Products */}
+      {relatedProducts.length > 0 && (
+        <div className="mt-24 pt-24 border-t border-gray-100 dark:border-gray-900">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-4xl font-black tracking-tighter uppercase mb-2">You Might Also Like</h2>
+              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">More sneakers from the {product.category} collection</p>
+            </div>
+            <button 
+              onClick={() => navigate("/shop", { state: { category: product.category } })}
+              className="hidden md:flex items-center space-x-2 text-xs font-black uppercase tracking-widest hover:translate-x-2 transition-transform"
+            >
+              <span>View Collection</span>
+              <ArrowRight size={16} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {relatedProducts.map(p => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Reviews Section */}
       <div className="mt-24 pt-24 border-t border-gray-100 dark:border-gray-900">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
@@ -500,6 +599,61 @@ export default function ProductDetail() {
           </div>
         </div>
       </div>
+      {/* Lightbox */}
+      <AnimatePresence>
+        {isLightboxOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-12"
+          >
+            <button 
+              onClick={() => setIsLightboxOpen(false)}
+              className="absolute top-8 right-8 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10"
+            >
+              <X size={24} />
+            </button>
+
+            <div className="relative w-full h-full flex items-center justify-center">
+              <button 
+                onClick={() => setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1))}
+                className="absolute left-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10 hidden md:block"
+              >
+                <ChevronLeft size={32} />
+              </button>
+
+              <motion.img
+                key={currentImage}
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                src={product.images?.[currentImage] || ""}
+                alt={product.name}
+                referrerPolicy="no-referrer"
+                className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl"
+              />
+
+              <button 
+                onClick={() => setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0))}
+                className="absolute right-0 p-6 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10 hidden md:block"
+              >
+                <ChevronRight size={32} />
+              </button>
+            </div>
+
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex space-x-3">
+              {product.images?.map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentImage(idx)}
+                  className={`w-3 h-3 rounded-full transition-all ${currentImage === idx ? 'bg-white scale-125' : 'bg-white/30 hover:bg-white/50'}`}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

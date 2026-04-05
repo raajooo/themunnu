@@ -91,8 +91,29 @@
         "razorpayKeySecret": { "type": "string" },
         "fast2smsApiKey": { "type": "string" },
         "delhiveryApiKey": { "type": "string" },
-        "isCodEnabled": { "type": "boolean" }
+        "isCodEnabled": { "type": "boolean" },
+        "isCouponSystemEnabled": { "type": "boolean" },
+        "supportEmail": { "type": "string" }
       }
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Discount coupons for orders.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "discountValue": { "type": "number" },
+        "minOrderAmount": { "type": "number" },
+        "maxDiscountAmount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "usageCount": { "type": "number" },
+        "totalDiscountGenerated": { "type": "number" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "discountType", "discountValue", "isActive"]
     },
     "Banner": {
       "title": "Banner",
@@ -139,6 +160,7 @@
     "/products/{productId}": { "schema": "Product", "description": "Sneaker inventory." },
     "/orders/{orderId}": { "schema": "Order", "description": "Customer orders." },
     "/settings/global": { "schema": "Settings", "description": "Global config." },
+    "/coupons/{couponId}": { "schema": "Coupon", "description": "Discount coupons." },
     "/banners/{bannerId}": { "schema": "Banner", "description": "Homepage banners." },
     "/categories/{categoryId}": { "schema": "Category", "description": "Product categories." },
     "/reviews/{reviewId}": { "schema": "Review", "description": "Product reviews." }
