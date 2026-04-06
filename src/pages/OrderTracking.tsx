@@ -5,7 +5,8 @@ import { db } from "../firebase";
 import { Order } from "../types";
 import { format } from "date-fns";
 import { motion } from "motion/react";
-import { Package, Truck, CheckCircle2, MapPin, ArrowLeft, Clock, Loader2, AlertCircle } from "lucide-react";
+import { Package, Truck, CheckCircle2, MapPin, ArrowLeft, Clock, Loader2, AlertCircle, Copy, Check } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 export default function OrderTracking() {
   const { id } = useParams();
@@ -14,6 +15,17 @@ export default function OrderTracking() {
   const [loading, setLoading] = useState(true);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(text);
+      toast.success("Order ID copied!");
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => {
+      toast.error("Failed to copy ID");
+    });
+  };
 
   const fetchTracking = async (trackingId: string, isSilent = false) => {
     if (!isSilent) setTrackingLoading(true);
@@ -117,7 +129,16 @@ export default function OrderTracking() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 space-y-4 md:space-y-0">
           <div>
             <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">Track Order</h1>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Order ID: #{order.id.slice(-8)}</p>
+            <div className="flex items-center space-x-2">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Order ID: #{order.id.slice(-8)}</p>
+              <button 
+                onClick={() => copyToClipboard(order.id)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-md transition-colors text-gray-400 hover:text-black dark:hover:text-white"
+                title="Copy Full Order ID"
+              >
+                {copiedId === order.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+              </button>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-1">Estimated Delivery</p>

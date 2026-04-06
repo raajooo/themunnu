@@ -5,8 +5,9 @@ import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { formatCurrency } from "../lib/utils";
 import { format } from "date-fns";
-import { Package, ChevronRight, Search, MessageCircle } from "lucide-react";
+import { Package, ChevronRight, Search, MessageCircle, Copy, Check } from "lucide-react";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
+import { toast } from "react-hot-toast";
 
 const CACHE_KEY = "user_orders_cache";
 const CACHE_EXPIRY = 10 * 60 * 1000; // 10 minutes
@@ -19,6 +20,17 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(text);
+      toast.success("Order ID copied!");
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => {
+      toast.error("Failed to copy ID");
+    });
+  };
 
   if (error) {
     throw error;
@@ -115,7 +127,16 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
                 <div className="flex space-x-8">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Order ID</p>
-                    <p className="text-sm font-black uppercase tracking-tighter">#{order.id.slice(-8)}</p>
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm font-black uppercase tracking-tighter">#{order.id.slice(-8)}</p>
+                      <button 
+                        onClick={() => copyToClipboard(order.id)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-md transition-colors text-gray-400 hover:text-black dark:hover:text-white"
+                        title="Copy Full Order ID"
+                      >
+                        {copiedId === order.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Placed On</p>

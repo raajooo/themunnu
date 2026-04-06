@@ -55,10 +55,24 @@ export default function Profile({ user }: ProfileProps) {
 
   if (!user) return <Navigate to="/login" />;
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    toast.success("Logged out successfully");
-    navigate("/");
+  const handleLogout = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Logout",
+      message: "Are you sure you want to log out of your account?",
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        try {
+          await signOut(auth);
+          toast.success("Logged out successfully");
+          navigate("/");
+        } catch (error) {
+          toast.error("Failed to log out");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
+        }
+      }
+    });
   };
 
   const handleUpdateProfile = async () => {

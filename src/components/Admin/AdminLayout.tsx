@@ -5,11 +5,13 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
+import ConfirmModal from "../ConfirmModal";
 
 export default function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Minimum swipe distance
   const minSwipeDistance = 50;
@@ -49,9 +51,19 @@ export default function AdminLayout() {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await signOut(auth);
-    toast.success("Admin logged out");
-    navigate("/login");
+    setIsLogoutModalOpen(true);
+  };
+
+  const confirmLogout = async () => {
+    try {
+      await signOut(auth);
+      toast.success("Admin logged out");
+      navigate("/login");
+    } catch (error) {
+      toast.error("Failed to log out");
+    } finally {
+      setIsLogoutModalOpen(false);
+    }
   };
 
   const navItems = [
@@ -66,9 +78,10 @@ export default function AdminLayout() {
   ];
 
   return (
-    <div 
-      className="min-h-screen bg-gray-50 dark:bg-black flex"
-      onTouchStart={onTouchStart}
+    <>
+      <div 
+        className="min-h-screen bg-gray-50 dark:bg-black flex"
+        onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
@@ -170,11 +183,20 @@ export default function AdminLayout() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
             >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
-    </div>
+                <Outlet />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </main>
+      </div>
+
+      <ConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={confirmLogout}
+        title="Logout"
+        message="Are you sure you want to log out of the admin panel?"
+      />
+    </>
   );
 }

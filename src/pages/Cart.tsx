@@ -8,6 +8,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { Coupon, Settings } from "../types";
 import { toast } from "react-hot-toast";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function Cart() {
   const { items, removeFromCart, updateQuantity, totalPrice, totalItems } = useCart();
@@ -17,6 +18,7 @@ export default function Cart() {
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [itemToRemove, setItemToRemove] = useState<{productId: string, size: string} | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -28,11 +30,17 @@ export default function Cart() {
 
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!couponCode.trim()) return;
+    const code = couponCode.trim();
+    if (!code) return;
+
+    if (code.length < 5) {
+      toast.error("Coupon code must be at least 5 characters long");
+      return;
+    }
     
     setIsApplying(true);
     try {
-      const docRef = doc(db, "coupons", couponCode.toUpperCase().trim());
+      const docRef = doc(db, "coupons", code.toUpperCase());
       const snap = await getDoc(docRef);
       
       if (!snap.exists()) {
@@ -141,7 +149,7 @@ export default function Cart() {
                       </button>
                     </div>
                     <button 
-                      onClick={() => removeFromCart(item.productId, item.size)}
+                      onClick={() => setItemToRemove({ productId: item.productId, size: item.size })}
                       className="p-2 text-gray-300 hover:text-red-500 transition-colors"
                     >
                       <Trash2 size={18} />
@@ -197,7 +205,10 @@ export default function Cart() {
                     type="text"
                     placeholder="COUPON CODE"
                     value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                      setCouponCode(value);
+                    }}
                     className="w-full pl-10 pr-14 py-4 bg-white dark:bg-black rounded-2xl text-xs font-black uppercase tracking-widest focus:outline-none border border-gray-100 dark:border-gray-800"
                   />
                   <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -253,6 +264,21 @@ export default function Cart() {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!itemToRemove}
+        onClose={() => setItemToRemove(null)}
+        onConfirm={() => {
+          if (itemToRemove) {
+            removeFromCart(itemToRemove.productId, itemToRemove.size);
+            setItemToRemove(null);
+            toast.success("Item removed from cart");
+          }
+        }}
+        title="Remove Item"
+        message="Are you sure you want to remove this item from your cart?"
+        confirmText="Remove"
+      />
     </div>
   );
 }

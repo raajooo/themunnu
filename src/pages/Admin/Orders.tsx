@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { collection, getDocs, updateDoc, doc, query, orderBy, limit, startAfter, getCountFromServer, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { format } from "date-fns";
-import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package, RefreshCw, ChevronDown } from "lucide-react";
+import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package, RefreshCw, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Copy, Check } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 import { motion } from "motion/react";
+import ConfirmModal from "../../components/ConfirmModal";
 
 const CACHE_KEY = "admin_orders_cache";
 const CACHE_EXPIRY = 2 * 60 * 1000; // 2 minutes
@@ -23,7 +24,20 @@ export default function AdminOrders() {
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'shipped' | 'delivered' | 'cancelled'>('all');
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(text);
+      toast.success("Order ID copied!");
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => {
+      toast.error("Failed to copy ID");
+    });
+  };
 
   if (error) {
     throw error;
@@ -438,6 +452,38 @@ export default function AdminOrders() {
     return order.orderStatus === filter;
   });
 
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedOrders = useMemo(() => {
+    let sortableOrders = [...filteredOrders];
+    if (sortConfig !== null) {
+      sortableOrders.sort((a, b) => {
+        let aValue: any = a[sortConfig.key as keyof Order];
+        let bValue: any = b[sortConfig.key as keyof Order];
+
+        if (sortConfig.key === 'createdAt') {
+          aValue = new Date(a.createdAt).getTime();
+          bValue = new Date(b.createdAt).getTime();
+        }
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableOrders;
+  }, [filteredOrders, sortConfig]);
+
   if (loading && orders.length === 0) {
     return (
       <div className="space-y-12 pb-20">
@@ -511,16 +557,31 @@ export default function AdminOrders() {
             <table className="w-full text-left">
               <thead>
                 <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
-                  <th className="px-8 py-6">Order</th>
+                  <th className="px-8 py-6 cursor-pointer hover:text-black dark:hover:text-white transition-colors group" onClick={() => requestSort('createdAt')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Order</span>
+                      {sortConfig?.key === 'createdAt' ? (sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    </div>
+                  </th>
                   <th className="px-8 py-6">Customer</th>
-                  <th className="px-8 py-6">Amount</th>
-                  <th className="px-8 py-6">Status</th>
+                  <th className="px-8 py-6 cursor-pointer hover:text-black dark:hover:text-white transition-colors group" onClick={() => requestSort('totalAmount')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Amount</span>
+                      {sortConfig?.key === 'totalAmount' ? (sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    </div>
+                  </th>
+                  <th className="px-8 py-6 cursor-pointer hover:text-black dark:hover:text-white transition-colors group" onClick={() => requestSort('orderStatus')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Status</span>
+                      {sortConfig?.key === 'orderStatus' ? (sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    </div>
+                  </th>
                   <th className="px-8 py-6 text-right">Label</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                {filteredOrders.length > 0 ? (
-                  filteredOrders.map(order => (
+                {sortedOrders.length > 0 ? (
+                  sortedOrders.map(order => (
                     <tr 
                       key={order.id} 
                       onClick={() => setSelectedOrder(order)}
@@ -529,7 +590,19 @@ export default function AdminOrders() {
                       <td className="px-8 py-6">
                         <div className="flex items-center space-x-3">
                           <div>
-                            <p className="text-sm font-black uppercase tracking-tighter">#{order.id.slice(-8)}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="text-sm font-black uppercase tracking-tighter">#{order.id.slice(-8)}</p>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(order.id);
+                                }}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-md transition-colors text-gray-400 hover:text-black dark:hover:text-white"
+                                title="Copy Full Order ID"
+                              >
+                                {copiedId === order.id ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+                              </button>
+                            </div>
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{format(new Date(order.createdAt), "MMM dd")}</p>
                           </div>
                           {(order.orderStatus === 'pending' || order.orderStatus === 'confirmed') && (
@@ -602,7 +675,16 @@ export default function AdminOrders() {
               <div className="flex justify-between items-start mb-8">
                 <div>
                   <h3 className="text-2xl font-black tracking-tighter uppercase mb-1">Order Details</h3>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">#{selectedOrder.id}</p>
+                  <div className="flex items-center space-x-2">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">#{selectedOrder.id}</p>
+                    <button 
+                      onClick={() => copyToClipboard(selectedOrder.id)}
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-md transition-colors text-gray-400 hover:text-black dark:hover:text-white"
+                      title="Copy Full Order ID"
+                    >
+                      {copiedId === selectedOrder.id ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+                    </button>
+                  </div>
                 </div>
                 <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full"><XCircle size={20} /></button>
               </div>
@@ -664,7 +746,7 @@ export default function AdminOrders() {
                       Deliver
                     </button>
                     <button 
-                      onClick={() => updateStatus(selectedOrder.id, 'cancelled')}
+                      onClick={() => setOrderToCancel(selectedOrder.id)}
                       className="py-3 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
                     >
                       Cancel
@@ -688,6 +770,20 @@ export default function AdminOrders() {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!orderToCancel}
+        onClose={() => setOrderToCancel(null)}
+        onConfirm={() => {
+          if (orderToCancel) {
+            updateStatus(orderToCancel, 'cancelled');
+            setOrderToCancel(null);
+          }
+        }}
+        title="Cancel Order"
+        message="Are you sure you want to cancel this order? This action cannot be undone."
+        confirmText="Cancel Order"
+      />
     </div>
   );
 }

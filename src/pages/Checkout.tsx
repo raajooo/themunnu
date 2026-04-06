@@ -9,6 +9,7 @@ import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home, Tag } from "lucide-react";
 import { lookupPincode } from "../lib/pincode";
+import ConfirmModal from "../components/ConfirmModal";
 
 declare global {
   interface Window {
@@ -29,6 +30,7 @@ export default function Checkout({ user }: CheckoutProps) {
   const [isCodEnabled, setIsCodEnabled] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const [countdown, setCountdown] = useState(5);
+  const [isCodModalOpen, setIsCodModalOpen] = useState(false);
 
   // Handle direct purchase (Buy Now)
   const directPurchase = location.state?.directPurchase as OrderItem | undefined;
@@ -102,6 +104,15 @@ export default function Checkout({ user }: CheckoutProps) {
     if (!address.pincode?.trim()) return toast.error("Pincode is required");
     if (!/^\d{6}$/.test(address.pincode.trim())) return toast.error("Pincode must be 6 digits");
 
+    if (paymentMethod === 'cod') {
+      setIsCodModalOpen(true);
+      return;
+    }
+
+    await processOrder();
+  };
+
+  const processOrder = async () => {
     setLoading(true);
     try {
       if (paymentMethod === 'razorpay') {
@@ -241,6 +252,7 @@ export default function Checkout({ user }: CheckoutProps) {
       toast.error(error.message || "Failed to place order. Please try again.");
     } finally {
       if (paymentMethod !== 'razorpay') setLoading(false);
+      setIsCodModalOpen(false);
     }
   };
 
@@ -513,6 +525,17 @@ export default function Checkout({ user }: CheckoutProps) {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={isCodModalOpen}
+        onClose={() => setIsCodModalOpen(false)}
+        onConfirm={processOrder}
+        title="Confirm COD Order"
+        message="Are you sure you want to place this order using Cash on Delivery? You will pay when the order is delivered to your address."
+        confirmText="Place Order"
+        isDestructive={false}
+        isLoading={loading}
+      />
     </div>
   );
 }
