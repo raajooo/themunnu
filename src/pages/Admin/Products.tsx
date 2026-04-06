@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, limit, getDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { Product, Category } from "../../types";
 import { formatCurrency } from "../../lib/utils";
@@ -49,6 +49,11 @@ export default function AdminProducts() {
   });
 
   const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
     fetchProducts();
@@ -58,10 +63,8 @@ export default function AdminProducts() {
     const checkAdmin = async () => {
       if (auth.currentUser) {
         try {
-          const userDoc = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc")));
-          // This is a bit inefficient, but we'll just check the current user's role
-          const currentUserDoc = userDoc.docs.find(d => d.id === auth.currentUser?.uid);
-          if (currentUserDoc && currentUserDoc.data().role === 'admin') {
+          const userSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+          if (userSnap.exists() && userSnap.data().role === 'admin') {
             setIsUserAdmin(true);
           } else {
             // Fallback to checking the email/phone if the doc isn't found or role isn't admin
@@ -97,11 +100,19 @@ export default function AdminProducts() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
+      const q = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(100));
       const snap = await getDocs(q);
       setProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    } catch (error) {
-      console.error("Error fetching products:", error);
+    } catch (err: any) {
+      if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+        try {
+          handleFirestoreError(err, OperationType.GET, "products");
+        } catch (quotaErr: any) {
+          setError(quotaErr);
+        }
+      } else {
+        console.error("Error fetching products:", err);
+      }
     } finally {
       setLoading(false);
     }

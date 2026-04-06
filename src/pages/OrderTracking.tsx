@@ -5,12 +5,14 @@ import { db } from "../firebase";
 import { Order } from "../types";
 import { format } from "date-fns";
 import { motion } from "motion/react";
-import { Package, Truck, CheckCircle2, MapPin, ArrowLeft, Clock } from "lucide-react";
+import { Package, Truck, CheckCircle2, MapPin, ArrowLeft, Clock, Loader2, AlertCircle } from "lucide-react";
 
 export default function OrderTracking() {
   const { id } = useParams();
   const [order, setOrder] = useState<Order | null>(null);
+  const [trackingData, setTrackingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [trackingLoading, setTrackingLoading] = useState(false);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -18,7 +20,12 @@ export default function OrderTracking() {
       try {
         const snap = await getDoc(doc(db, "orders", id));
         if (snap.exists()) {
-          setOrder({ id: snap.id, ...snap.data() } as Order);
+          const orderData = { id: snap.id, ...snap.data() } as Order;
+          setOrder(orderData);
+          
+          if (orderData.trackingId) {
+            fetchTracking(orderData.trackingId);
+          }
         }
       } catch (error) {
         console.error("Error fetching order:", error);
@@ -26,6 +33,22 @@ export default function OrderTracking() {
         setLoading(false);
       }
     };
+
+    const fetchTracking = async (trackingId: string) => {
+      setTrackingLoading(true);
+      try {
+        const response = await fetch(`/api/shipping/track/${trackingId}`);
+        const data = await response.json();
+        if (data.success) {
+          setTrackingData(data.data);
+        }
+      } catch (error) {
+        console.error("Error fetching tracking:", error);
+      } finally {
+        setTrackingLoading(false);
+      }
+    };
+
     fetchOrder();
   }, [id]);
 
@@ -131,6 +154,41 @@ export default function OrderTracking() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Tracking ID</p>
                 <p className="text-sm font-black uppercase tracking-tighter">{order.trackingId || "Pending Assignment"}</p>
               </div>
+              {trackingLoading ? (
+                <div className="flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest text-blue-500">
+                  <Loader2 size={12} className="animate-spin" />
+                  <span>Fetching Real-time Status...</span>
+                </div>
+              ) : trackingData?.ShipmentData?.[0]?.Shipment?.Status?.Status ? (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Current Status</p>
+                  <p className="text-sm font-black text-blue-500 uppercase tracking-tighter">
+                    {trackingData.ShipmentData[0].Shipment.Status.Status}
+                  </p>
+                  <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
+                    Last Update: {trackingData.ShipmentData[0].Shipment.Status.StatusLocation}
+                  </p>
+                  {trackingData.ShipmentData[0].Shipment.Scans && (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Recent Activity</p>
+                      {trackingData.ShipmentData[0].Shipment.Scans.slice(0, 3).map((scan: any, idx: number) => (
+                        <div key={idx} className="flex items-start space-x-3">
+                          <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-tight">{scan.ScanDetail.Scan}</p>
+                            <p className="text-[8px] font-medium text-gray-400 uppercase">{scan.ScanDetail.ScannedLocation}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : order.trackingId && (
+                <div className="flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest text-red-500">
+                  <AlertCircle size={12} />
+                  <span>Tracking data unavailable</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

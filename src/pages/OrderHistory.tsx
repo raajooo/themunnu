@@ -6,6 +6,10 @@ import { db } from "../firebase";
 import { formatCurrency } from "../lib/utils";
 import { format } from "date-fns";
 import { Package, ChevronRight, Search, MessageCircle } from "lucide-react";
+import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
+
+const CACHE_KEY = "user_orders_cache";
+const CACHE_EXPIRY = 10 * 60 * 1000; // 10 minutes
 
 interface OrderHistoryProps {
   user: User | null;
@@ -14,10 +18,27 @@ interface OrderHistoryProps {
 export default function OrderHistory({ user }: OrderHistoryProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
     const fetchOrders = async () => {
       if (!user) return;
+      
+      // Try cache first
+      const cached = localStorage.getItem(`${CACHE_KEY}_${user.uid}`);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_EXPIRY) {
+          setOrders(data);
+          setLoading(false);
+          return;
+        }
+      }
+
       try {
         const q = query(
           collection(db, "orders"),
@@ -25,9 +46,24 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
           orderBy("createdAt", "desc")
         );
         const snap = await getDocs(q);
-        setOrders(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-      } catch (error) {
-        console.error("Error fetching orders:", error);
+        const fetchedOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+        setOrders(fetchedOrders);
+        
+        // Update cache
+        localStorage.setItem(`${CACHE_KEY}_${user.uid}`, JSON.stringify({
+          data: fetchedOrders,
+          timestamp: Date.now()
+        }));
+      } catch (err: any) {
+        if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+          try {
+            handleFirestoreError(err, OperationType.GET, "orders_history");
+          } catch (quotaErr: any) {
+            setError(quotaErr);
+          }
+        } else {
+          console.error("Error fetching orders:", err);
+        }
       } finally {
         setLoading(false);
       }

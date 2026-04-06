@@ -1,49 +1,112 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, updateDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, updateDoc, doc, query, orderBy, limit, startAfter, getCountFromServer, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { format } from "date-fns";
-import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package, RefreshCw } from "lucide-react";
+import { Search, Filter, Printer, ChevronRight, Loader2, Truck, CheckCircle2, XCircle, ShoppingCart, Bell, Package, RefreshCw, ChevronDown } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 import { motion } from "motion/react";
+
+const CACHE_KEY = "admin_orders_cache";
+const CACHE_EXPIRY = 2 * 60 * 1000; // 2 minutes
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [shipping, setShipping] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [newOrderCount, setNewOrderCount] = useState(0);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'shipped' | 'delivered' | 'cancelled'>('all');
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastOrderCount = useRef(0);
 
-  const fetchOrders = async (isInitial = false) => {
+  const fetchOrders = async (isInitial = false, isLoadMore = false) => {
     if (isInitial) setLoading(true);
+    else if (isLoadMore) setShipping(true); // Using shipping state as a generic loading for load more
     else setRefreshing(true);
 
     try {
-      const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
-      const newOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
-      
-      if (!isInitial && newOrders.length > lastOrderCount.current) {
-        const diff = newOrders.length - lastOrderCount.current;
-        toast.success(`${diff} New Order(s) Received!`, {
-          icon: '🔥',
-        });
-        audioRef.current?.play().catch(e => console.log("Audio play failed:", e));
-        setNewOrderCount(prev => prev + diff);
+      if (isInitial && !isLoadMore) {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, timestamp, total } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_EXPIRY) {
+            setOrders(data);
+            setTotalOrders(total);
+            setLoading(false);
+            // Still fetch in background to stay updated but don't block
+            setRefreshing(true);
+          }
+        }
       }
+
+      if (isInitial || !isLoadMore) {
+        const countSnap = await getCountFromServer(collection(db, "orders"));
+        setTotalOrders(countSnap.data().count);
+      }
+
+      const ordersRef = collection(db, "orders");
+      let q = query(ordersRef, orderBy("createdAt", "desc"), limit(50));
+
+      if (isLoadMore && lastDoc) {
+        q = query(ordersRef, orderBy("createdAt", "desc"), startAfter(lastDoc), limit(50));
+      }
+
+      const snap = await getDocs(q);
+      const newDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       
-      setOrders(newOrders);
-      lastOrderCount.current = newOrders.length;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, "orders");
+      let finalOrders = orders;
+      if (isLoadMore) {
+        finalOrders = [...orders, ...newDocs];
+        setOrders(finalOrders);
+      } else {
+        if (!isInitial && newDocs.length > 0 && newDocs[0].id !== orders[0]?.id) {
+          toast.success(`New Orders Received!`, { icon: '🔥' });
+          audioRef.current?.play().catch(e => console.log("Audio play failed:", e));
+          setNewOrderCount(prev => prev + 1);
+        }
+        finalOrders = newDocs;
+        setOrders(finalOrders);
+      }
+
+      setLastDoc(snap.docs[snap.docs.length - 1] || null);
+      setHasMore(snap.docs.length === 50);
+      lastOrderCount.current = isLoadMore ? orders.length + newDocs.length : newDocs.length;
+
+      // Update cache
+      if (!isLoadMore) {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          data: finalOrders,
+          total: isInitial ? totalOrders : totalOrders, // Use current total
+          timestamp: Date.now()
+        }));
+      }
+    } catch (err: any) {
+      if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+        try {
+          handleFirestoreError(err, OperationType.GET, "orders");
+        } catch (quotaErr: any) {
+          setError(quotaErr);
+        }
+      } else {
+        console.error("Error fetching orders:", err);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
+      if (isLoadMore) setShipping(false);
     }
   };
 
@@ -54,8 +117,12 @@ export default function AdminOrders() {
     
     fetchOrders(true);
 
-    // Auto refresh every 2 minutes to save quota but stay updated
-    const interval = setInterval(() => fetchOrders(), 120000);
+    // Auto refresh every 5 minutes to save quota but stay updated
+    const interval = setInterval(() => {
+      if (document.hasFocus()) {
+        fetchOrders();
+      }
+    }, 300000);
     return () => clearInterval(interval);
   }, []);
 
@@ -63,8 +130,32 @@ export default function AdminOrders() {
     try {
       await updateDoc(doc(db, "orders", id), { orderStatus: status });
       toast.success(`Order marked as ${status}`);
+      fetchOrders();
     } catch (error) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const createShipment = async (orderId: string) => {
+    setShipping(true);
+    try {
+      const response = await fetch('/api/shipping/create-shipment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Shipment created! Tracking ID: ${data.trackingId}`);
+        fetchOrders();
+      } else {
+        toast.error(data.error || "Failed to create shipment");
+      }
+    } catch (error) {
+      console.error("Shipping error:", error);
+      toast.error("Failed to connect to shipping API");
+    } finally {
+      setShipping(false);
     }
   };
 
@@ -490,6 +581,18 @@ export default function AdminOrders() {
               </tbody>
             </table>
           </div>
+          
+          {hasMore && (
+            <div className="p-8 flex justify-center border-t border-gray-50 dark:border-gray-900">
+              <button 
+                onClick={() => fetchOrders(false, true)}
+                className="flex items-center space-x-2 px-8 py-4 bg-gray-50 dark:bg-gray-900 rounded-full text-xs font-black uppercase tracking-widest hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
+              >
+                <ChevronDown size={16} />
+                <span>Load More Orders</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Order Details Panel */}
@@ -544,7 +647,15 @@ export default function AdminOrders() {
                       onClick={() => updateStatus(selectedOrder.id, 'shipped')}
                       className="py-3 bg-gray-50 dark:bg-gray-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
                     >
-                      Ship
+                      Mark Shipped
+                    </button>
+                    <button 
+                      onClick={() => createShipment(selectedOrder.id)}
+                      disabled={shipping || !!selectedOrder.trackingId}
+                      className="py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
+                    >
+                      {shipping ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
+                      <span>{selectedOrder.trackingId ? "Waybill: " + selectedOrder.trackingId : "Ship w/ Delivery One"}</span>
                     </button>
                     <button 
                       onClick={() => updateStatus(selectedOrder.id, 'delivered')}

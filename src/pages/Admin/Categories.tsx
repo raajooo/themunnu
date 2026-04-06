@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { Category } from "../../types";
 import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle, ShieldAlert } from "lucide-react";
@@ -38,6 +38,11 @@ export default function AdminCategories() {
   });
 
   const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
     fetchCategories();
@@ -46,9 +51,8 @@ export default function AdminCategories() {
     const checkAdmin = async () => {
       if (auth.currentUser) {
         try {
-          const userDoc = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc")));
-          const currentUserDoc = userDoc.docs.find(d => d.id === auth.currentUser?.uid);
-          if (currentUserDoc && currentUserDoc.data().role === 'admin') {
+          const userSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+          if (userSnap.exists() && userSnap.data().role === 'admin') {
             setIsUserAdmin(true);
           } else {
             const email = auth.currentUser.email;
@@ -118,9 +122,17 @@ export default function AdminCategories() {
       const q = query(collection(db, "categories"), orderBy("createdAt", "desc"));
       const snap = await getDocs(q);
       setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      toast.error("Failed to fetch categories");
+    } catch (err: any) {
+      if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+        try {
+          handleFirestoreError(err, OperationType.GET, "categories");
+        } catch (quotaErr: any) {
+          setError(quotaErr);
+        }
+      } else {
+        console.error("Error fetching categories:", err);
+        toast.error("Failed to fetch categories");
+      }
     } finally {
       setLoading(false);
     }

@@ -29,6 +29,11 @@ export default function ProductDetail() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
     const fetchRelatedProducts = async (category: string, currentId: string) => {
@@ -67,13 +72,17 @@ export default function ProductDetail() {
     const fetchProduct = async () => {
       if (!id) return;
       try {
-        // Check session storage for product cache
-        const cachedProduct = sessionStorage.getItem(`product_${id}`);
+        // Check local storage for product cache
+        const cachedProduct = localStorage.getItem(`product_${id}`);
         if (cachedProduct) {
-          const p = JSON.parse(cachedProduct);
-          setProduct(p);
-          setLoading(false);
-          fetchRelatedProducts(p.category, id);
+          const { data, timestamp } = JSON.parse(cachedProduct);
+          // Cache for 30 minutes
+          if (Date.now() - timestamp < 30 * 60 * 1000) {
+            setProduct(data);
+            setLoading(false);
+            fetchRelatedProducts(data.category, id);
+            return;
+          }
         }
 
         const docRef = doc(db, "products", id);
@@ -81,11 +90,21 @@ export default function ProductDetail() {
         if (snap.exists()) {
           const productData = { id: snap.id, ...snap.data() } as Product;
           setProduct(productData);
-          sessionStorage.setItem(`product_${id}`, JSON.stringify(productData));
+          localStorage.setItem(`product_${id}`, JSON.stringify({
+            data: productData,
+            timestamp: Date.now()
+          }));
           fetchRelatedProducts(productData.category, id);
         }
-      } catch (error) {
-        console.error("Error fetching product:", error);
+      } catch (err: any) {
+        console.error("Error fetching product:", err);
+        if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+          try {
+            handleFirestoreError(err, OperationType.GET, `product/${id}`);
+          } catch (quotaErr: any) {
+            setError(quotaErr);
+          }
+        }
       } finally {
         setLoading(false);
       }

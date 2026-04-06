@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, limit, getCountFromServer } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { motion } from "motion/react";
 import { ShoppingCart, Package, Users, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -18,28 +19,46 @@ export default function AdminDashboard() {
   });
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const ordersSnap = await getDocs(collection(db, "orders"));
-        const productsSnap = await getDocs(collection(db, "products"));
-        const usersSnap = await getDocs(collection(db, "users"));
+        // Use getCountFromServer for efficient counting (1 read per 1000 docs)
+        const ordersCountSnap = await getCountFromServer(collection(db, "orders"));
+        const productsCountSnap = await getCountFromServer(collection(db, "products"));
+        const usersCountSnap = await getCountFromServer(collection(db, "users"));
 
+        // For revenue, we still need to fetch orders to sum them up
+        // In a real app, you'd maintain a stats document to avoid this
+        // We'll limit this to the last 100 orders for a "recent revenue" estimate or just fetch all if needed
+        // But to save quota, let's just fetch the last 50 for now or handle the error
+        const ordersSnap = await getDocs(query(collection(db, "orders"), limit(100)));
         const totalRevenue = ordersSnap.docs.reduce((sum, doc) => sum + (doc.data().totalAmount || 0), 0);
         
         setStats({
           revenue: totalRevenue,
-          orders: ordersSnap.size,
-          products: productsSnap.size,
-          users: usersSnap.size
+          orders: ordersCountSnap.data().count,
+          products: productsCountSnap.data().count,
+          users: usersCountSnap.data().count
         });
 
         const recentQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(5));
         const recentSnap = await getDocs(recentQuery);
         setRecentOrders(recentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-      } catch (error) {
-        console.error("Error fetching admin stats:", error);
+      } catch (err: any) {
+        console.error("Error fetching admin stats:", err);
+        if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+          try {
+            handleFirestoreError(err, OperationType.GET, "admin_stats");
+          } catch (quotaErr: any) {
+            setError(quotaErr);
+          }
+        }
       } finally {
         setLoading(false);
       }

@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 import { createRequire } from "module";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import axios from "axios";
 
 const require = createRequire(import.meta.url);
 const firebaseConfig = require("./firebase-applet-config.json");
@@ -278,7 +279,131 @@ app.post("/api/payment/create-order", async (req, res) => {
 });
 
 app.get("/api/shipping/track/:id", async (req, res) => {
-  res.json({ success: true, status: "In Transit" });
+  const { id } = req.params; // trackingId (waybill)
+  
+  try {
+    // Get settings for API key
+    const settingsDoc = await firestore.collection("settings").doc("main").get();
+    const settings = settingsDoc.data();
+    const apiKey = settings?.delhiveryApiKey || process.env.DELHIVERY_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({ error: "Delhivery API key not configured" });
+    }
+
+    const response = await axios.get(`https://track.delhivery.com/api/v1/packages/json/?waybill=${id}`, {
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({ success: true, data: response.data });
+  } catch (error: any) {
+    console.error("Delhivery Tracking Error:", error);
+    res.status(500).json({ error: "Failed to track shipment", details: error.message });
+  }
+});
+
+// 2. Create Shipment (Admin only)
+app.post("/api/shipping/create-shipment", async (req, res) => {
+  const { orderId } = req.body;
+  
+  try {
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    if (!orderDoc.exists) return res.status(404).json({ error: "Order not found" });
+    const order = orderDoc.data();
+
+    const settingsDoc = await firestore.collection("settings").doc("main").get();
+    const settings = settingsDoc.data();
+    const apiKey = settings?.delhiveryApiKey || process.env.DELHIVERY_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({ error: "Delhivery API key not configured" });
+    }
+
+    // Prepare Delhivery Payload
+    const payload = {
+      shipments: [{
+        add: order?.address?.address,
+        address_type: "home",
+        phone: order?.address?.phone,
+        payment_mode: order?.paymentMethod === 'cod' ? "COD" : "Prepaid",
+        name: order?.address?.name,
+        pin: order?.address?.pincode,
+        order: order?.id,
+        cod_amount: order?.paymentMethod === 'cod' ? order?.totalAmount : 0,
+        total_amount: order?.totalAmount,
+        products_desc: order?.items?.map((item: any) => item.name).join(", "),
+        hsn_code: "",
+        quantity: order?.items?.reduce((acc: number, item: any) => acc + item.quantity, 0)
+      }],
+      pickup_location: {
+        name: "Main Warehouse",
+        add: "123 Warehouse St",
+        city: "Mumbai",
+        pin: "400001",
+        phone: "9876543210"
+      }
+    };
+
+    const response = await axios.post('https://track.delhivery.com/api/cne/json/', `format=json&data=${JSON.stringify(payload)}`, {
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    if (response.data.success) {
+      const trackingId = response.data.packages[0].waybill;
+      await firestore.collection("orders").doc(orderId).update({
+        trackingId,
+        orderStatus: 'shipped'
+      });
+      res.json({ success: true, trackingId });
+    } else {
+      res.status(400).json({ error: "Failed to create shipment", details: response.data });
+    }
+  } catch (error: any) {
+    console.error("Delhivery Create Shipment Error:", error);
+    res.status(500).json({ error: "Failed to create shipment", details: error.message });
+  }
+});
+
+// 3. Webhook for automatic updates
+app.post("/api/shipping/webhook", async (req, res) => {
+  const data = req.body;
+  console.log("Delhivery Webhook Received:", data);
+
+  try {
+    const waybill = data.waybill || data.awb;
+    const status = data.status?.status?.toLowerCase();
+    
+    if (waybill) {
+      const orderQuery = await firestore.collection("orders").where("trackingId", "==", waybill).get();
+      if (!orderQuery.empty) {
+        const orderDoc = orderQuery.docs[0];
+        let newStatus = orderDoc.data().orderStatus;
+
+        if (status.includes("delivered")) {
+          newStatus = "delivered";
+        } else if (status.includes("shipped") || status.includes("in transit")) {
+          newStatus = "shipped";
+        } else if (status.includes("cancelled")) {
+          newStatus = "cancelled";
+        }
+
+        await orderDoc.ref.update({
+          orderStatus: newStatus,
+          lastTrackingUpdate: data
+        });
+      }
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Webhook Error:", error);
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
 });
 
 // Global Error Handler

@@ -29,8 +29,11 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const isQuotaExceeded = errorMessage.includes('resource-exhausted') || errorMessage.includes('Quota limit exceeded');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: isQuotaExceeded ? "Firestore Quota Exceeded. Please wait until tomorrow for the free tier to reset." : errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -48,7 +51,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // We don't necessarily want to crash the whole app in a listener, 
-  // but the instructions say "MUST catch the error and throw a new error with a very specific JSON object"
+  
+  // Throw a specialized error if quota is exceeded
+  if (isQuotaExceeded) {
+    const quotaError = new Error(JSON.stringify(errInfo));
+    quotaError.name = 'FirestoreQuotaError';
+    throw quotaError;
+  }
+
   throw new Error(JSON.stringify(errInfo));
 }

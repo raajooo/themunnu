@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, updateDoc, doc, query, orderBy, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, updateDoc, doc, query, orderBy, deleteDoc, limit } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { User, Address } from "../../types";
 import { Search, Shield, ShieldAlert, User as UserIcon, Loader2, Mail, Phone, Trash2, X, MapPin, Calendar, Fingerprint, AlertTriangle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
+import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -14,6 +15,11 @@ export default function AdminUsers() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -36,12 +42,20 @@ export default function AdminUsers() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+      const q = query(collection(db, "users"), orderBy("createdAt", "desc"), limit(100));
       const snap = await getDocs(q);
       setUsers(snap.docs.map(doc => ({ ...doc.data() } as User)));
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      toast.error("Failed to fetch users");
+    } catch (err: any) {
+      if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+        try {
+          handleFirestoreError(err, OperationType.GET, "users");
+        } catch (quotaErr: any) {
+          setError(quotaErr);
+        }
+      } else {
+        console.error("Error fetching users:", err);
+        toast.error("Failed to fetch users");
+      }
     } finally {
       setLoading(false);
     }

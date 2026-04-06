@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
-import { collection, query, where, limit, getDocs, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, where, limit, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Banner, Category } from "../types";
 import ProductCard from "../components/ProductCard";
 import { ArrowRight, Zap, TrendingUp, Star } from "lucide-react";
 import LazyImage from "../components/LazyImage";
+import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 
 export default function Home() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
@@ -14,53 +15,80 @@ export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  if (error) {
+    throw error;
+  }
 
   useEffect(() => {
-    // Check session storage for cached data
-    const cachedData = sessionStorage.getItem("home_data");
-    if (cachedData) {
-      const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
-      // Cache for 5 minutes
-      if (Date.now() - timestamp < 5 * 60 * 1000) {
+    const fetchData = async () => {
+      try {
+        // Check local storage for cached data
+        const cachedData = localStorage.getItem("home_data");
+        if (cachedData) {
+          const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
+          // Cache for 30 minutes to save quota
+          if (Date.now() - timestamp < 30 * 60 * 1000) {
+            setFeaturedProducts(featured);
+            setTrendingProducts(trending);
+            setCategories(cats);
+            setBanners(bans);
+            setLoading(false);
+            return;
+          }
+        }
+
+        const productsRef = collection(db, "products");
+        
+        // Fetch Featured
+        const qFeatured = query(productsRef, where("isFeatured", "==", true), limit(4));
+        const featuredSnap = await getDocs(qFeatured);
+        const featured = featuredSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
         setFeaturedProducts(featured);
+
+        // Fetch Trending
+        const qTrending = query(productsRef, where("isTrending", "==", true), limit(4));
+        const trendingSnap = await getDocs(qTrending);
+        const trending = trendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
         setTrendingProducts(trending);
+
+        // Fetch Categories
+        const qCategories = collection(db, "categories");
+        const categoriesSnap = await getDocs(qCategories);
+        const cats = categoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
         setCategories(cats);
+
+        // Fetch Banners
+        const qBanners = collection(db, "banners");
+        const bannersSnap = await getDocs(qBanners);
+        const bans = bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner));
         setBanners(bans);
+
+        // Cache the data in localStorage
+        localStorage.setItem("home_data", JSON.stringify({
+          featured,
+          trending,
+          cats,
+          bans,
+          timestamp: Date.now()
+        }));
+      } catch (err: any) {
+        console.error("Error fetching home data:", err);
+        // If quota is exceeded, handleFirestoreError will throw and be caught by ErrorBoundary
+        if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
+          try {
+            handleFirestoreError(err, OperationType.GET, "home_data");
+          } catch (quotaErr: any) {
+            setError(quotaErr);
+          }
+        }
+      } finally {
         setLoading(false);
       }
-    }
-
-    const productsRef = collection(db, "products");
-    
-    // Use onSnapshot for real-time updates and better caching
-    const qFeatured = query(productsRef, where("isFeatured", "==", true), limit(4));
-    const qTrending = query(productsRef, where("isTrending", "==", true), limit(4));
-    const qCategories = collection(db, "categories");
-    const qBanners = collection(db, "banners");
-
-    const unsubFeatured = onSnapshot(qFeatured, (snap) => {
-      setFeaturedProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    });
-
-    const unsubTrending = onSnapshot(qTrending, (snap) => {
-      setTrendingProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    });
-
-    const unsubCats = onSnapshot(qCategories, (snap) => {
-      setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
-    });
-
-    const unsubBanners = onSnapshot(qBanners, (snap) => {
-      setBanners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner)));
-      setLoading(false);
-    });
-
-    return () => {
-      unsubFeatured();
-      unsubTrending();
-      unsubCats();
-      unsubBanners();
     };
+
+    fetchData();
   }, []);
 
   return (
