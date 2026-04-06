@@ -48,16 +48,16 @@ export default function Navbar({ user }: NavbarProps) {
       }
 
       try {
-        // For a real app, you'd use a search service or more complex Firestore queries.
-        // Here we fetch a subset and filter locally for better UX in this demo.
-        const q = query(collection(db, "products"), limit(20));
+        // We fetch a bit more and filter locally for better UX since Firestore doesn't support full-text search well
+        const q = query(collection(db, "products"), limit(50));
         const snap = await getDocs(q);
         const allProducts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
         
         const filtered = allProducts.filter(p => 
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.brand.toLowerCase().includes(searchQuery.toLowerCase())
-        ).slice(0, 5);
+          p.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.category.toLowerCase().includes(searchQuery.toLowerCase())
+        ).slice(0, 6);
 
         setSuggestions(filtered);
         setShowSuggestions(true);

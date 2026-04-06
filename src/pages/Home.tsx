@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { collection, query, where, limit, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Banner, Category } from "../types";
 import ProductCard from "../components/ProductCard";
-import { ArrowRight, Zap, TrendingUp, Star } from "lucide-react";
+import { ArrowRight, Zap, TrendingUp, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import LazyImage from "../components/LazyImage";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 
@@ -16,6 +16,23 @@ export default function Home() {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const [currentBanner, setCurrentBanner] = useState(0);
+
+  const nextBanner = useCallback(() => {
+    setCurrentBanner((prev) => (prev + 1) % (banners.length || 1));
+  }, [banners.length]);
+
+  const prevBanner = useCallback(() => {
+    setCurrentBanner((prev) => (prev - 1 + (banners.length || 1)) % (banners.length || 1));
+  }, [banners.length]);
+
+  useEffect(() => {
+    if (banners.length > 1) {
+      const timer = setInterval(nextBanner, 5000);
+      return () => clearInterval(timer);
+    }
+  }, [banners.length, nextBanner]);
 
   if (error) {
     throw error;
@@ -60,7 +77,7 @@ export default function Home() {
         setCategories(cats);
 
         // Fetch Banners
-        const qBanners = collection(db, "banners");
+        const qBanners = query(collection(db, "banners"), where("isActive", "==", true), orderBy("order", "asc"));
         const bannersSnap = await getDocs(qBanners);
         const bans = bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner));
         setBanners(bans);
@@ -95,41 +112,119 @@ export default function Home() {
     <div className="space-y-20 pb-20">
       {/* Hero Section */}
       <section className="relative h-[85vh] overflow-hidden bg-black">
-        <div className="absolute inset-0 opacity-60">
-          <LazyImage 
-            src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=2070" 
-            alt="Hero" 
-            className="w-full h-full object-cover"
-          />
-        </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-        
-        <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-start">
-          <motion.div
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
-            className="max-w-2xl"
-          >
-            <span className="inline-block px-3 py-1 bg-white text-black text-[10px] font-black uppercase tracking-[0.3em] mb-6">
-              New Season Drop
-            </span>
-            <h1 className="text-6xl md:text-8xl font-black text-white leading-none tracking-tighter mb-8">
-              STEP INTO <br /> THE FUTURE.
-            </h1>
-            <p className="text-xl text-gray-300 mb-10 max-w-md">
-              Experience the pinnacle of sneaker technology and bold street aesthetic. Designed for the next generation.
-            </p>
-            <div className="flex space-x-4">
-              <Link to="/shop" className="px-8 py-4 bg-white text-black font-black text-sm uppercase tracking-widest hover:bg-gray-200 transition-colors flex items-center">
-                Shop Now <ArrowRight className="ml-2" size={18} />
-              </Link>
-              <Link to="/shop?category=limited" className="px-8 py-4 bg-transparent border-2 border-white text-white font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-colors">
-                Limited Drops
-              </Link>
+        <AnimatePresence mode="wait">
+          {banners.length > 0 ? (
+            <motion.div
+              key={banners[currentBanner].id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.8 }}
+              className="absolute inset-0"
+            >
+              <div className="absolute inset-0 opacity-60">
+                <LazyImage 
+                  src={banners[currentBanner].imageUrl} 
+                  alt={banners[currentBanner].title} 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+              
+              <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-start">
+                <motion.div
+                  initial={{ opacity: 0, x: -50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.8, delay: 0.2 }}
+                  className="max-w-2xl"
+                >
+                  <span className="inline-block px-3 py-1 bg-white text-black text-[10px] font-black uppercase tracking-[0.3em] mb-6">
+                    Featured Drop
+                  </span>
+                  <h1 className="text-6xl md:text-8xl font-black text-white leading-none tracking-tighter mb-8 uppercase">
+                    {banners[currentBanner].title}
+                  </h1>
+                  {banners[currentBanner].subtitle && (
+                    <p className="text-xl text-gray-300 mb-10 max-w-md uppercase tracking-widest font-bold">
+                      {banners[currentBanner].subtitle}
+                    </p>
+                  )}
+                  <div className="flex space-x-4">
+                    <Link to={banners[currentBanner].link || "/shop"} className="px-8 py-4 bg-white text-black font-black text-sm uppercase tracking-widest hover:bg-gray-200 transition-colors flex items-center">
+                      Shop Now <ArrowRight className="ml-2" size={18} />
+                    </Link>
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="absolute inset-0">
+              <div className="absolute inset-0 opacity-60">
+                <LazyImage 
+                  src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=2070" 
+                  alt="Hero" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+              
+              <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-start">
+                <motion.div
+                  initial={{ opacity: 0, x: -50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.8 }}
+                  className="max-w-2xl"
+                >
+                  <span className="inline-block px-3 py-1 bg-white text-black text-[10px] font-black uppercase tracking-[0.3em] mb-6">
+                    New Season Drop
+                  </span>
+                  <h1 className="text-6xl md:text-8xl font-black text-white leading-none tracking-tighter mb-8">
+                    STEP INTO <br /> THE FUTURE.
+                  </h1>
+                  <p className="text-xl text-gray-300 mb-10 max-w-md">
+                    Experience the pinnacle of sneaker technology and bold street aesthetic. Designed for the next generation.
+                  </p>
+                  <div className="flex space-x-4">
+                    <Link to="/shop" className="px-8 py-4 bg-white text-black font-black text-sm uppercase tracking-widest hover:bg-gray-200 transition-colors flex items-center">
+                      Shop Now <ArrowRight className="ml-2" size={18} />
+                    </Link>
+                  </div>
+                </motion.div>
+              </div>
             </div>
-          </motion.div>
-        </div>
+          )}
+        </AnimatePresence>
+
+        {/* Banner Controls */}
+        {banners.length > 1 && (
+          <div className="absolute bottom-10 right-10 flex space-x-4 z-20">
+            <button 
+              onClick={prevBanner}
+              className="p-4 bg-white/10 backdrop-blur-md text-white rounded-full hover:bg-white/20 transition-all border border-white/20"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button 
+              onClick={nextBanner}
+              className="p-4 bg-white/10 backdrop-blur-md text-white rounded-full hover:bg-white/20 transition-all border border-white/20"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </div>
+        )}
+
+        {/* Banner Indicators */}
+        {banners.length > 1 && (
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex space-x-2 z-20">
+            {banners.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => setCurrentBanner(idx)}
+                className={`w-12 h-1 rounded-full transition-all ${idx === currentBanner ? 'bg-white' : 'bg-white/30'}`}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Featured Section */}
@@ -182,7 +277,14 @@ export default function Home() {
                 />
                 <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
                 <div className="absolute bottom-10 left-10 text-white">
-                  <h3 className="text-4xl font-black tracking-tighter mb-2 uppercase">{cat.name}</h3>
+                  <div className="flex items-center space-x-3 mb-2">
+                    {cat.logoUrl && (
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-white/20 backdrop-blur-md border border-white/30">
+                        <img src={cat.logoUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                    )}
+                    <h3 className="text-4xl font-black tracking-tighter uppercase">{cat.name}</h3>
+                  </div>
                   <p className="text-sm font-medium opacity-80">Explore the collection.</p>
                 </div>
               </Link>

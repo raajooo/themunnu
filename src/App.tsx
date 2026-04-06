@@ -30,6 +30,7 @@ import AdminOrders from "./pages/Admin/Orders";
 import AdminCoupons from "./pages/Admin/Coupons";
 import AdminSettings from "./pages/Admin/Settings";
 import AdminUsers from "./pages/Admin/Users";
+import AdminBanners from "./pages/Admin/Banners";
 
 // Components
 import Layout from "./components/Layout";
@@ -156,6 +157,7 @@ export default function App() {
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="users" element={<AdminUsers />} />
+          <Route path="banners" element={<AdminBanners />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Routes>

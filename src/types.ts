@@ -91,6 +91,8 @@ export interface Banner {
   link: string;
   title: string;
   subtitle?: string;
+  isActive: boolean;
+  order: number;
 }
 
 export interface Category {
@@ -98,6 +100,7 @@ export interface Category {
   name: string;
   slug: string;
   imageUrl?: string;
+  logoUrl?: string;
   createdAt: string;
 }
 

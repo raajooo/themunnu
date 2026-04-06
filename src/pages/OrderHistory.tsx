@@ -135,9 +135,11 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
                   }`}>
                     {order.orderStatus}
                   </span>
-                  <Link to={`/track/${order.id}`} className="flex items-center text-xs font-black uppercase tracking-widest underline underline-offset-4">
-                    Track Order <ChevronRight size={14} className="ml-1" />
-                  </Link>
+                  {order.trackingId && (
+                    <Link to={`/track/${order.id}`} className="flex items-center text-xs font-black uppercase tracking-widest underline underline-offset-4 text-black dark:text-white hover:opacity-70 transition-opacity">
+                      Track Order <ChevronRight size={14} className="ml-1" />
+                    </Link>
+                  )}
                 </div>
               </div>
 

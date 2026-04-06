@@ -13,6 +13,23 @@ export default function OrderTracking() {
   const [trackingData, setTrackingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [trackingLoading, setTrackingLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+
+  const fetchTracking = async (trackingId: string, isSilent = false) => {
+    if (!isSilent) setTrackingLoading(true);
+    try {
+      const response = await fetch(`/api/shipping/track/${trackingId}`);
+      const data = await response.json();
+      if (data.success) {
+        setTrackingData(data.data);
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error("Error fetching tracking:", error);
+    } finally {
+      if (!isSilent) setTrackingLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -34,23 +51,19 @@ export default function OrderTracking() {
       }
     };
 
-    const fetchTracking = async (trackingId: string) => {
-      setTrackingLoading(true);
-      try {
-        const response = await fetch(`/api/shipping/track/${trackingId}`);
-        const data = await response.json();
-        if (data.success) {
-          setTrackingData(data.data);
-        }
-      } catch (error) {
-        console.error("Error fetching tracking:", error);
-      } finally {
-        setTrackingLoading(false);
-      }
-    };
-
     fetchOrder();
   }, [id]);
+
+  // Periodic updates
+  useEffect(() => {
+    if (!order?.trackingId) return;
+
+    const interval = setInterval(() => {
+      fetchTracking(order.trackingId!, true);
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [order?.trackingId]);
 
   if (loading) {
     return (
@@ -62,14 +75,37 @@ export default function OrderTracking() {
   }
   if (!order) return <div className="py-20 text-center">Order not found</div>;
 
+  const delhiveryStatus = trackingData?.ShipmentData?.[0]?.Shipment?.Status?.Status?.toLowerCase() || "";
+  
   const steps = [
-    { status: 'pending', label: 'Order Placed', icon: Clock, date: order.createdAt },
-    { status: 'confirmed', label: 'Confirmed', icon: CheckCircle2, date: null },
-    { status: 'shipped', label: 'Shipped', icon: Truck, date: null },
-    { status: 'delivered', label: 'Delivered', icon: Package, date: null },
+    { id: 'placed', label: 'Order Placed', icon: Clock, date: order.createdAt, completed: true },
+    { 
+      id: 'processed', 
+      label: 'Processed', 
+      icon: CheckCircle2, 
+      completed: !!trackingData || order.orderStatus !== 'pending' 
+    },
+    { 
+      id: 'shipped', 
+      label: 'In Transit', 
+      icon: Truck, 
+      completed: delhiveryStatus.includes('transit') || delhiveryStatus.includes('shipped') || delhiveryStatus.includes('out for delivery') || delhiveryStatus.includes('delivered')
+    },
+    { 
+      id: 'out_for_delivery', 
+      label: 'Out for Delivery', 
+      icon: MapPin, 
+      completed: delhiveryStatus.includes('out for delivery') || delhiveryStatus.includes('delivered')
+    },
+    { 
+      id: 'delivered', 
+      label: 'Delivered', 
+      icon: Package, 
+      completed: delhiveryStatus.includes('delivered')
+    },
   ];
 
-  const currentStepIdx = steps.findIndex(s => s.status === order.orderStatus);
+  const currentStepIdx = steps.reduce((acc, step, idx) => step.completed ? idx : acc, 0);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -86,6 +122,12 @@ export default function OrderTracking() {
           <div className="text-right">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-1">Estimated Delivery</p>
             <p className="text-xl font-black uppercase tracking-tighter">{order.deliveryEstimate || "Calculating..."}</p>
+            <div className="flex items-center justify-end mt-2 space-x-2">
+              <div className={`w-2 h-2 rounded-full ${trackingLoading ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
+              <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">
+                Live Updates Active • Last: {format(lastUpdated, "HH:mm:ss")}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -104,14 +146,21 @@ export default function OrderTracking() {
               const isCurrent = idx === currentStepIdx;
 
               return (
-                <div key={step.status} className="flex flex-col items-center">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center z-10 transition-all duration-500 ${
-                    isActive ? 'bg-black dark:bg-white text-white dark:text-black scale-110' : 'bg-gray-100 dark:bg-gray-900 text-gray-400'
-                  }`}>
+                <div key={step.id} className="flex flex-col items-center">
+                  <motion.div 
+                    initial={false}
+                    animate={{ 
+                      scale: isCurrent ? 1.2 : 1,
+                      backgroundColor: isActive ? (isCurrent ? "#3b82f6" : "#000") : "#f3f4f6"
+                    }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center z-10 transition-all duration-500 ${
+                      isActive ? 'text-white' : 'text-gray-400'
+                    }`}
+                  >
                     <Icon size={20} />
-                  </div>
-                  <div className="absolute mt-14 text-center">
-                    <p className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-black dark:text-white' : 'text-gray-400'}`}>
+                  </motion.div>
+                  <div className="absolute mt-14 text-center w-24">
+                    <p className={`text-[10px] font-black uppercase tracking-widest leading-tight ${isActive ? 'text-black dark:text-white' : 'text-gray-400'}`}>
                       {step.label}
                     </p>
                     {step.date && (

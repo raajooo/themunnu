@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { Category } from "../../types";
-import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle, ShieldAlert } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Loader2, Upload, AlertTriangle, ShieldAlert, Image as ImageIcon } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
 import ConfirmModal from "../../components/ConfirmModal";
@@ -17,11 +17,13 @@ export default function AdminCategories() {
   const [formData, setFormData] = useState<Partial<Category>>({
     name: "",
     slug: "",
-    imageUrl: ""
+    imageUrl: "",
+    logoUrl: ""
   });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -108,6 +110,47 @@ export default function AdminCategories() {
       toast.error("Failed to process image");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file type. Please upload an image.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo is too large (max 2MB allowed)");
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const compressionOptions = {
+        maxSizeMB: 0.1, // Target 100KB for logo
+        maxWidthOrHeight: 400,
+        useWebWorker: true,
+        initialQuality: 0.8
+      };
+
+      const compressedFile = await imageCompression(file, compressionOptions);
+      
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(compressedFile);
+      });
+      setFormData({ ...formData, logoUrl: base64 });
+    } catch (error) {
+      console.error("Logo compression error:", error);
+      toast.error("Failed to process logo");
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -288,6 +331,7 @@ export default function AdminCategories() {
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
                 <th className="px-8 py-6">Image</th>
+                <th className="px-8 py-6">Logo</th>
                 <th className="px-8 py-6">Category Name</th>
                 <th className="px-8 py-6">Slug</th>
                 <th className="px-8 py-6 text-right">Actions</th>
@@ -303,6 +347,17 @@ export default function AdminCategories() {
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-400">
                           <Plus size={16} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
+                      {category.logoUrl ? (
+                        <img src={category.logoUrl} alt={`${category.name} logo`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <ImageIcon size={14} />
                         </div>
                       )}
                     </div>
@@ -363,37 +418,73 @@ export default function AdminCategories() {
               </div>
 
               <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Category Image</label>
-                  <div className="flex items-center space-x-6">
-                    <div className="w-24 h-24 rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
-                      {formData.imageUrl ? (
-                        <>
-                          <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          <button 
-                            type="button"
-                            onClick={() => setFormData({ ...formData, imageUrl: "" })}
-                            className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <X className="text-white" size={20} />
-                          </button>
-                        </>
-                      ) : (
-                        <Upload className="text-gray-400" size={24} />
-                      )}
-                    </div>
-                    <label className="flex-grow">
-                      <div className="px-6 py-3 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
-                        {uploading ? "Uploading..." : "Select Image"}
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Category Image</label>
+                    <div className="flex flex-col space-y-4">
+                      <div className="w-full aspect-square rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
+                        {formData.imageUrl ? (
+                          <>
+                            <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <button 
+                              type="button"
+                              onClick={() => setFormData({ ...formData, imageUrl: "" })}
+                              className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="text-white" size={20} />
+                            </button>
+                          </>
+                        ) : (
+                          <Upload className="text-gray-400" size={24} />
+                        )}
                       </div>
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={uploading}
-                      />
-                    </label>
+                      <label className="w-full">
+                        <div className="px-4 py-2 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
+                          {uploading ? "..." : "Select Image"}
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={uploading}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Category Logo</label>
+                    <div className="flex flex-col space-y-4">
+                      <div className="w-full aspect-square rounded-full overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
+                        {formData.logoUrl ? (
+                          <>
+                            <img src={formData.logoUrl} alt="Logo Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <button 
+                              type="button"
+                              onClick={() => setFormData({ ...formData, logoUrl: "" })}
+                              className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="text-white" size={20} />
+                            </button>
+                          </>
+                        ) : (
+                          <ImageIcon className="text-gray-400" size={24} />
+                        )}
+                      </div>
+                      <label className="w-full">
+                        <div className="px-4 py-2 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
+                          {uploadingLogo ? "..." : "Select Logo"}
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          disabled={uploadingLogo}
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
 
