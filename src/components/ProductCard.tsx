@@ -3,16 +3,17 @@ import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import { Product } from "../types";
 import { formatCurrency } from "../lib/utils";
-import { ShoppingCart, Heart, Star, Share2 } from "lucide-react";
+import { ShoppingCart, Heart, Star, Share2, Tag } from "lucide-react";
 import LazyImage from "./LazyImage";
 import { toast } from "react-hot-toast";
 
 interface ProductCardProps {
   product: Product;
+  hasCoupon?: boolean;
   key?: React.Key;
 }
 
-export default function ProductCard({ product }: ProductCardProps) {
+export default React.memo(function ProductCard({ product, hasCoupon }: ProductCardProps) {
   const handleShare = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -35,6 +36,12 @@ export default function ProductCard({ product }: ProductCardProps) {
         {product.isLimited && (
           <div className="absolute top-4 left-4 bg-black text-white text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest">
             Limited
+          </div>
+        )}
+        {hasCoupon && (
+          <div className={`absolute ${product.isLimited ? 'top-12' : 'top-4'} left-4 bg-green-500 text-white text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest flex items-center`}>
+            <Tag size={10} className="mr-1" />
+            Coupon
           </div>
         )}
         {product.averageRating && product.averageRating > 0 && (
@@ -79,4 +86,4 @@ export default function ProductCard({ product }: ProductCardProps) {
       </div>
     </motion.div>
   );
-}
+});

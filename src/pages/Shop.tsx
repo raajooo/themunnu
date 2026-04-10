@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Category } from "../types";
 import ProductCard from "../components/ProductCard";
+import Breadcrumbs from "../components/Breadcrumbs";
 import { SlidersHorizontal, ChevronDown, Search, Loader2 } from "lucide-react";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 
@@ -11,13 +12,35 @@ export default function Shop() {
   const [searchParams, setSearchParams] = useSearchParams();
   const categoryParam = searchParams.get("category");
   const queryParam = searchParams.get("q") || "";
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Synchronous cache check for initial state
+  const getInitialProducts = () => {
+    const sessionKey = `shop_products_session_${categoryParam || 'all'}`;
+    const sessionData = sessionStorage.getItem(sessionKey);
+    if (sessionData) return JSON.parse(sessionData);
+
+    const cacheKey = `shop_products_${categoryParam || 'all'}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < 30 * 60 * 1000) return data;
+    }
+    return [];
+  };
+
+  const initialProducts = getInitialProducts();
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const cached = localStorage.getItem("shop_categories");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [loading, setLoading] = useState(initialProducts.length === 0);
   const [searchQuery, setSearchQuery] = useState(queryParam);
+  const [debouncedSearch, setDebouncedSearch] = useState(queryParam);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 50000]);
   const [selectedBrand, setSelectedBrand] = useState<string>("All");
   const [error, setError] = useState<Error | null>(null);
+  const [hasActiveCoupons, setHasActiveCoupons] = useState(false);
 
   if (error) {
     throw error;
@@ -46,24 +69,47 @@ export default function Shop() {
       }
     };
     fetchCategories();
+
+    const fetchCoupons = async () => {
+      try {
+        // We only check if there's at least one active coupon to show the banner
+        // Using a limited query to check existence without needing full list permissions
+        const q = query(collection(db, "coupons"), where("isActive", "==", true), limit(1));
+        const snap = await getDocs(q);
+        setHasActiveCoupons(!snap.empty);
+      } catch (error) {
+        console.error("Error fetching coupons:", error);
+      }
+    };
+    fetchCoupons();
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
     const fetchProducts = async () => {
-      setLoading(true);
       try {
-        // Check cache first
+        // Check if we already have valid cache to skip loading state
         const cacheKey = `shop_products_${categoryParam || 'all'}`;
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < 30 * 60 * 1000) { // 30 min cache
-            setProducts(data);
+          const { timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 30 * 60 * 1000) {
             setLoading(false);
             return;
           }
         }
 
+        // Only show loading if we don't have products yet
+        if (products.length === 0) {
+          setLoading(true);
+        }
+        
         const productsRef = collection(db, "products");
         let q = query(productsRef, orderBy("createdAt", "desc"));
 
@@ -96,11 +142,25 @@ export default function Shop() {
 
         setProducts(results);
         
-        // Update cache
-        localStorage.setItem(cacheKey, JSON.stringify({
-          data: results,
-          timestamp: Date.now()
-        }));
+        // Update cache with error handling for quota
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            data: results,
+            timestamp: Date.now()
+          }));
+
+          // Also save to session storage
+          sessionStorage.setItem(`shop_products_session_${categoryParam || 'all'}`, JSON.stringify(results));
+        } catch (storageErr) {
+          console.warn("Storage quota exceeded, clearing old cache...");
+          // Clear old shop caches to make room
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('shop_products_')) localStorage.removeItem(key);
+          });
+          Object.keys(sessionStorage).forEach(key => {
+            if (key.startsWith('shop_products_session_')) sessionStorage.removeItem(key);
+          });
+        }
       } catch (err: any) {
         console.error("Error fetching products:", err);
         if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
@@ -116,10 +176,16 @@ export default function Shop() {
     };
 
     fetchProducts();
-  }, [categoryParam, searchQuery, selectedBrand, priceRange]);
+  }, [categoryParam, debouncedSearch, selectedBrand, priceRange]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <Breadcrumbs 
+        items={[
+          { label: "SHOP", path: "/shop" },
+          ...(categoryParam ? [{ label: (categories.find(c => c.slug === categoryParam)?.name || categoryParam).toUpperCase() }] : [])
+        ]} 
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 space-y-6 md:space-y-0">
         <div>
           <h1 className="text-5xl font-black tracking-tighter uppercase">
@@ -228,7 +294,7 @@ export default function Shop() {
           ) : products.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {products.map(product => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard key={product.id} product={product} hasCoupon={hasActiveCoupons} />
               ))}
             </div>
           ) : (

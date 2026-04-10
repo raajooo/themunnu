@@ -14,6 +14,7 @@ export default function AdminCoupons() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -23,6 +24,7 @@ export default function AdminCoupons() {
     discountValue: 0,
     minOrderAmount: 0,
     maxDiscountAmount: 0,
+    maxUsagePerUser: 1,
     expiryDate: "",
     isActive: true
   });
@@ -30,6 +32,26 @@ export default function AdminCoupons() {
   useEffect(() => {
     fetchCoupons();
   }, []);
+
+  const handleSendReminders = async () => {
+    setIsSendingReminders(true);
+    try {
+      const res = await fetch("/api/admin/send-coupon-reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Reminders sent successfully");
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send reminders");
+    } finally {
+      setIsSendingReminders(false);
+    }
+  };
 
   const fetchCoupons = async () => {
     try {
@@ -69,6 +91,7 @@ export default function AdminCoupons() {
         discountValue: 0,
         minOrderAmount: 0,
         maxDiscountAmount: 0,
+        maxUsagePerUser: 1,
         expiryDate: "",
         isActive: true
       });
@@ -115,13 +138,23 @@ export default function AdminCoupons() {
           <h1 className="text-5xl font-black tracking-tighter uppercase mb-2">Coupon Management</h1>
           <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Create and track discount codes</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="px-8 py-4 bg-black dark:bg-white text-white dark:text-black font-black text-xs uppercase tracking-widest rounded-full hover:opacity-90 transition-opacity flex items-center space-x-2 shadow-2xl shadow-black/20"
-        >
-          <Plus size={16} />
-          <span>Create Coupon</span>
-        </button>
+        <div className="flex flex-wrap gap-4 w-full md:w-auto">
+          <button 
+            onClick={handleSendReminders}
+            disabled={isSendingReminders}
+            className="px-8 py-4 bg-gray-100 dark:bg-gray-900 text-black dark:text-white font-black text-xs uppercase tracking-widest rounded-full hover:opacity-90 transition-opacity flex items-center space-x-2 disabled:opacity-50"
+          >
+            {isSendingReminders ? <Loader2 size={16} className="animate-spin" /> : <Calendar size={16} />}
+            <span>Send Reminders</span>
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="px-8 py-4 bg-black dark:bg-white text-white dark:text-black font-black text-xs uppercase tracking-widest rounded-full hover:opacity-90 transition-opacity flex items-center space-x-2 shadow-2xl shadow-black/20"
+          >
+            <Plus size={16} />
+            <span>Create Coupon</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}
@@ -217,6 +250,10 @@ export default function AdminCoupons() {
                 <div className="hidden md:block">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Min Order</p>
                   <p className="text-xl font-black">{formatCurrency(coupon.minOrderAmount)}</p>
+                </div>
+                <div className="hidden md:block">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Max/User</p>
+                  <p className="text-xl font-black">{coupon.maxUsagePerUser || '∞'}</p>
                 </div>
               </div>
 
@@ -323,7 +360,7 @@ export default function AdminCoupons() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Max Discount (Optional)</label>
                       <input
@@ -331,6 +368,15 @@ export default function AdminCoupons() {
                         className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
                         value={formData.maxDiscountAmount}
                         onChange={(e) => setFormData({...formData, maxDiscountAmount: Number(e.target.value)})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Max Usage Per User</label>
+                      <input
+                        type="number"
+                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                        value={formData.maxUsagePerUser}
+                        onChange={(e) => setFormData({...formData, maxUsagePerUser: Number(e.target.value)})}
                       />
                     </div>
                     <div className="space-y-2">

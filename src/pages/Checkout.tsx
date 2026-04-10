@@ -3,11 +3,11 @@ import { useNavigate, Navigate, useLocation } from "react-router-dom";
 import { useCart } from "../hooks/useCart";
 import { User, Address, OrderItem, Coupon } from "../types";
 import { formatCurrency } from "../lib/utils";
-import { collection, addDoc, doc, updateDoc, getDoc, increment } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, getDoc, increment, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
-import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home, Tag } from "lucide-react";
+import { CreditCard, Truck, MapPin, CheckCircle2, ArrowLeft, Loader2, XCircle, Home, Tag, Calendar } from "lucide-react";
 import { lookupPincode } from "../lib/pincode";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -31,6 +31,30 @@ export default function Checkout({ user }: CheckoutProps) {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const [countdown, setCountdown] = useState(5);
   const [isCodModalOpen, setIsCodModalOpen] = useState(false);
+
+  const calculateEstimatedDelivery = (minDays: number, maxDays: number) => {
+    const addBusinessDays = (date: Date, days: number) => {
+      const result = new Date(date);
+      let added = 0;
+      while (added < days) {
+        result.setDate(result.getDate() + 1);
+        if (result.getDay() !== 0 && result.getDay() !== 6) {
+          added++;
+        }
+      }
+      return result;
+    };
+
+    const now = new Date();
+    const minDate = addBusinessDays(now, minDays);
+    const maxDate = addBusinessDays(now, maxDays);
+
+    return {
+      min: minDate.toISOString(),
+      max: maxDate.toISOString(),
+      formatted: `${minDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - ${maxDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+    };
+  };
 
   // Handle direct purchase (Buy Now)
   const directPurchase = location.state?.directPurchase as OrderItem | undefined;
@@ -150,6 +174,7 @@ export default function Checkout({ user }: CheckoutProps) {
 
               if (verifyRes.ok && verifyData.success) {
                 // 4. Save order to Firestore
+                const estDelivery = calculateEstimatedDelivery(5, 7);
                 const finalOrderData = {
                   userId: user.uid,
                   items,
@@ -162,6 +187,8 @@ export default function Checkout({ user }: CheckoutProps) {
                   razorpayPaymentId: response.razorpay_payment_id,
                   orderStatus: 'pending',
                   address,
+                  deliveryEstimate: estDelivery.formatted,
+                  estimatedDelivery: estDelivery,
                   createdAt: new Date().toISOString(),
                 };
 
@@ -173,6 +200,20 @@ export default function Checkout({ user }: CheckoutProps) {
                     usageCount: increment(1),
                     totalDiscountGenerated: increment(discountAmount)
                   });
+
+                  // Update User Specific Usage
+                  const usageRef = doc(db, "coupon_usage", `${user.uid}_${coupon.code}`);
+                  const usageSnap = await getDoc(usageRef);
+                  if (usageSnap.exists()) {
+                    await updateDoc(usageRef, { count: increment(1) });
+                  } else {
+                    await setDoc(usageRef, { 
+                      userId: user.uid, 
+                      couponCode: coupon.code, 
+                      count: 1,
+                      lastUsed: new Date().toISOString()
+                    });
+                  }
                 }
                 
                 if (!directPurchase) clearCart();
@@ -220,6 +261,7 @@ export default function Checkout({ user }: CheckoutProps) {
         rzp.open();
       } else {
         // Cash on Delivery
+        const estDelivery = calculateEstimatedDelivery(5, 7);
         const orderData = {
           userId: user.uid,
           items,
@@ -230,6 +272,8 @@ export default function Checkout({ user }: CheckoutProps) {
           paymentStatus: 'pending',
           orderStatus: 'pending',
           address,
+          deliveryEstimate: estDelivery.formatted,
+          estimatedDelivery: estDelivery,
           createdAt: new Date().toISOString(),
         };
 
@@ -241,6 +285,20 @@ export default function Checkout({ user }: CheckoutProps) {
             usageCount: increment(1),
             totalDiscountGenerated: increment(discountAmount)
           });
+
+          // Update User Specific Usage
+          const usageRef = doc(db, "coupon_usage", `${user.uid}_${coupon.code}`);
+          const usageSnap = await getDoc(usageRef);
+          if (usageSnap.exists()) {
+            await updateDoc(usageRef, { count: increment(1) });
+          } else {
+            await setDoc(usageRef, { 
+              userId: user.uid, 
+              couponCode: coupon.code, 
+              count: 1,
+              lastUsed: new Date().toISOString()
+            });
+          }
         }
         
         toast.success("Order placed successfully!");

@@ -1,24 +1,26 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { useCart } from "../hooks/useCart";
 import { formatCurrency } from "../lib/utils";
-import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Tag, X, Loader2 } from "lucide-react";
+import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Tag, X, Loader2, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useEffect } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
-import { Coupon, Settings } from "../types";
+import { Coupon, Settings, User } from "../types";
 import { toast } from "react-hot-toast";
 import ConfirmModal from "../components/ConfirmModal";
 
 export default function Cart() {
   const { items, removeFromCart, updateQuantity, totalPrice, totalItems } = useCart();
   const navigate = useNavigate();
+  const { user } = useOutletContext<{ user: User | null }>();
   
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [itemToRemove, setItemToRemove] = useState<{productId: string, size: string} | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -28,9 +30,20 @@ export default function Cart() {
     fetchSettings();
   }, []);
 
+  // Re-validate coupon when total price changes
+  useEffect(() => {
+    if (appliedCoupon) {
+      if (totalPrice < appliedCoupon.minOrderAmount) {
+        setAppliedCoupon(null);
+        setCouponError(`Coupon removed: Minimum order amount is ${formatCurrency(appliedCoupon.minOrderAmount)}`);
+        toast.error(`Minimum order amount for ${appliedCoupon.code} is ${formatCurrency(appliedCoupon.minOrderAmount)}`);
+      }
+    }
+  }, [totalPrice, appliedCoupon]);
+
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    const code = couponCode.trim();
+    const code = couponCode.trim().toUpperCase();
     if (!code) return;
 
     if (code.length < 5) {
@@ -39,11 +52,13 @@ export default function Cart() {
     }
     
     setIsApplying(true);
+    setCouponError(null);
     try {
-      const docRef = doc(db, "coupons", code.toUpperCase());
+      const docRef = doc(db, "coupons", code);
       const snap = await getDoc(docRef);
       
       if (!snap.exists()) {
+        setCouponError("Invalid coupon code");
         toast.error("Invalid coupon code");
         return;
       }
@@ -51,21 +66,39 @@ export default function Cart() {
       const coupon = { id: snap.id, ...snap.data() } as Coupon;
       
       if (!coupon.isActive) {
+        setCouponError("This coupon is no longer active");
         toast.error("This coupon is no longer active");
         return;
       }
       
       if (totalPrice < coupon.minOrderAmount) {
+        setCouponError(`Minimum order amount is ${formatCurrency(coupon.minOrderAmount)}`);
         toast.error(`Minimum order amount for this coupon is ${formatCurrency(coupon.minOrderAmount)}`);
         return;
       }
       
       if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
+        setCouponError("This coupon has expired");
         toast.error("This coupon has expired");
         return;
       }
+
+      // Check Max Usage Per User
+      if (coupon.maxUsagePerUser && user) {
+        const usageRef = doc(db, "coupon_usage", `${user.uid}_${coupon.code}`);
+        const usageSnap = await getDoc(usageRef);
+        if (usageSnap.exists()) {
+          const usageData = usageSnap.data();
+          if (usageData.count >= coupon.maxUsagePerUser) {
+            setCouponError(`You have already used this coupon ${coupon.maxUsagePerUser} time(s)`);
+            toast.error(`You have reached the maximum usage limit for this coupon`);
+            return;
+          }
+        }
+      }
       
       setAppliedCoupon(coupon);
+      setCouponError(null);
       toast.success("Coupon applied successfully!");
     } catch (error) {
       toast.error("Failed to apply coupon");
@@ -198,49 +231,84 @@ export default function Cart() {
             </div>
 
             {/* Coupon Input */}
-            {settings?.isCouponSystemEnabled && !appliedCoupon && (
-              <form onSubmit={handleApplyCoupon} className="mb-8">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="COUPON CODE"
-                    value={couponCode}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
-                      setCouponCode(value);
-                    }}
-                    className="w-full pl-10 pr-14 py-4 bg-white dark:bg-black rounded-2xl text-xs font-black uppercase tracking-widest focus:outline-none border border-gray-100 dark:border-gray-800"
-                  />
-                  <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <button
-                    type="submit"
-                    disabled={isApplying || !couponCode.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
-                  >
-                    {isApplying ? <Loader2 className="animate-spin" size={12} /> : "Apply"}
-                  </button>
-                </div>
-              </form>
-            )}
+            {settings?.isCouponSystemEnabled && (
+              <div className="mb-8">
+                {!appliedCoupon ? (
+                  <form onSubmit={handleApplyCoupon}>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="COUPON CODE"
+                        value={couponCode}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                          setCouponCode(value);
+                        }}
+                        className={`w-full pl-10 pr-14 py-4 bg-white dark:bg-black rounded-2xl text-xs font-black uppercase tracking-widest focus:outline-none border ${couponError ? 'border-red-500' : 'border-gray-100 dark:border-gray-800'}`}
+                      />
+                      <Tag className={`absolute left-4 top-1/2 -translate-y-1/2 ${couponError ? 'text-red-500' : 'text-gray-400'}`} size={16} />
+                      <button
+                        type="submit"
+                        disabled={isApplying || !couponCode.trim()}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                      >
+                        {isApplying ? <Loader2 className="animate-spin" size={12} /> : "Apply"}
+                      </button>
+                    </div>
+                    {couponError && (
+                      <p className="text-[10px] font-bold text-red-500 mt-2 ml-4 uppercase tracking-widest">{couponError}</p>
+                    )}
+                  </form>
+                ) : (
+                  <div className="p-6 bg-green-50 dark:bg-green-900/20 rounded-[2rem] border border-green-100 dark:border-green-900/30">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-green-500 text-white rounded-lg">
+                          <Tag size={14} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-green-600">Active Coupon</p>
+                          <p className="text-sm font-black uppercase tracking-widest">{appliedCoupon.code}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button 
+                          onClick={() => {
+                            setAppliedCoupon(null);
+                            setCouponCode("");
+                            setCouponError(null);
+                          }}
+                          className="p-2 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-full transition-colors text-green-600"
+                          title="Remove Coupon"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 pt-4 border-t border-green-100 dark:border-green-900/30">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-green-700">
+                        <span>Discount Value</span>
+                        <span>{appliedCoupon.discountType === 'percentage' ? `${appliedCoupon.discountValue}%` : formatCurrency(appliedCoupon.discountValue)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs font-black uppercase tracking-widest text-green-800">
+                        <span>Total Savings</span>
+                        <span>{formatCurrency(discountAmount)}</span>
+                      </div>
+                    </div>
 
-            {appliedCoupon && (
-              <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/20 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Tag size={16} className="text-green-500" />
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-green-600">Coupon Applied</p>
-                    <p className="text-xs font-black uppercase tracking-widest">{appliedCoupon.code}</p>
+                    <button 
+                      onClick={() => {
+                        setAppliedCoupon(null);
+                        setCouponCode("");
+                        setCouponError(null);
+                      }}
+                      className="w-full mt-4 py-3 bg-green-500/10 hover:bg-green-500/20 text-green-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center"
+                    >
+                      <RefreshCw size={12} className="mr-2" /> Change Coupon
+                    </button>
                   </div>
-                </div>
-                <button 
-                  onClick={() => {
-                    setAppliedCoupon(null);
-                    setCouponCode("");
-                  }}
-                  className="p-2 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-full transition-colors text-green-600"
-                >
-                  <X size={16} />
-                </button>
+                )}
               </div>
             )}
 

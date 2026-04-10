@@ -26,6 +26,10 @@ export default function AdminBanners() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [compressionPreset, setCompressionPreset] = useState<'high' | 'balanced' | 'small' | 'custom'>('balanced');
+  const [customQuality, setCustomQuality] = useState(0.8);
+  const [selectedBanners, setSelectedBanners] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [isUserAdmin, setIsUserAdmin] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -109,15 +113,34 @@ export default function AdminBanners() {
     }
 
     setUploading(true);
+    const toastId = toast.loading("Processing image...");
     try {
+      let maxSizeMB = 0.5;
+      let initialQuality = 0.8;
+
+      if (compressionPreset === 'high') {
+        maxSizeMB = 1.0;
+        initialQuality = 0.9;
+      } else if (compressionPreset === 'small') {
+        maxSizeMB = 0.2;
+        initialQuality = 0.6;
+      } else if (compressionPreset === 'custom') {
+        maxSizeMB = customQuality > 0.8 ? 1.0 : 0.5;
+        initialQuality = customQuality;
+      }
+
       const compressionOptions = {
-        maxSizeMB: 0.5,
+        maxSizeMB,
         maxWidthOrHeight: 1920,
         useWebWorker: true,
-        initialQuality: 0.8
+        initialQuality,
+        onProgress: (progress: number) => {
+          toast.loading(`Compressing: ${progress}%`, { id: toastId });
+        }
       };
 
       const compressedFile = await imageCompression(file, compressionOptions);
+      toast.loading("Converting to final format...", { id: toastId });
       
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -126,9 +149,10 @@ export default function AdminBanners() {
         reader.readAsDataURL(compressedFile);
       });
       setFormData({ ...formData, imageUrl: base64 });
+      toast.success("Image processed successfully!", { id: toastId });
     } catch (error) {
       console.error("Compression error:", error);
-      toast.error("Failed to process image");
+      toast.error("Failed to process image", { id: toastId });
     } finally {
       setUploading(false);
     }
@@ -138,6 +162,11 @@ export default function AdminBanners() {
     e.preventDefault();
     if (!formData.title || !formData.imageUrl) {
       toast.error("Please provide a title and an image");
+      return;
+    }
+
+    if (formData.link && !formData.link.startsWith('/') && !/^https?:\/\//.test(formData.link)) {
+      toast.error("Invalid Link URL. Must start with '/' or 'http(s)://'");
       return;
     }
 
@@ -232,6 +261,58 @@ export default function AdminBanners() {
     (b.subtitle && b.subtitle.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const handleSelectAll = () => {
+    if (selectedBanners.length === filteredBanners.length) {
+      setSelectedBanners([]);
+    } else {
+      setSelectedBanners(filteredBanners.map(b => b.id));
+    }
+  };
+
+  const handleSelectBanner = (id: string) => {
+    setSelectedBanners(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkToggleStatus = async (active: boolean) => {
+    setBulkActionLoading(true);
+    const toastId = toast.loading(`Updating ${selectedBanners.length} banners...`);
+    try {
+      await Promise.all(selectedBanners.map(id => updateDoc(doc(db, "banners", id), { isActive: active })));
+      toast.success(`Bulk update successful`, { id: toastId });
+      setSelectedBanners([]);
+      fetchBanners();
+    } catch (error) {
+      toast.error("Bulk update failed", { id: toastId });
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Bulk Delete",
+      message: `Are you sure you want to delete ${selectedBanners.length} banners?`,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isLoading: true }));
+        const toastId = toast.loading(`Deleting ${selectedBanners.length} banners...`);
+        try {
+          await Promise.all(selectedBanners.map(id => deleteDoc(doc(db, "banners", id))));
+          toast.success("Bulk delete successful", { id: toastId });
+          setSelectedBanners([]);
+          fetchBanners();
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          toast.error("Bulk delete failed", { id: toastId });
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    });
+  };
+
   if (loading && banners.length === 0) {
     return (
       <div className="space-y-12 pb-20">
@@ -304,6 +385,14 @@ export default function AdminBanners() {
           <table className="w-full text-left min-w-[800px]">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
+                <th className="px-8 py-6 w-10">
+                  <input 
+                    type="checkbox" 
+                    className="w-4 h-4 accent-black dark:accent-white cursor-pointer"
+                    checked={filteredBanners.length > 0 && selectedBanners.length === filteredBanners.length}
+                    onChange={handleSelectAll}
+                  />
+                </th>
                 <th className="px-8 py-6">Order</th>
                 <th className="px-8 py-6">Image</th>
                 <th className="px-8 py-6">Title / Subtitle</th>
@@ -313,7 +402,15 @@ export default function AdminBanners() {
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
               {filteredBanners.map((banner, index) => (
-                <tr key={banner.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors">
+                <tr key={banner.id} className={`hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors ${selectedBanners.includes(banner.id) ? 'bg-gray-50 dark:bg-gray-900' : ''}`}>
+                  <td className="px-8 py-6">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 accent-black dark:accent-white cursor-pointer"
+                      checked={selectedBanners.includes(banner.id)}
+                      onChange={() => handleSelectBanner(banner.id)}
+                    />
+                  </td>
                   <td className="px-8 py-6">
                     <div className="flex flex-col items-center space-y-1">
                       <button 
@@ -406,6 +503,40 @@ export default function AdminBanners() {
                 <div className="space-y-4">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Banner Image</label>
                   <div className="flex flex-col space-y-4">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Compression Settings</label>
+                      <div className="flex space-x-2">
+                        {(['high', 'balanced', 'small', 'custom'] as const).map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setCompressionPreset(preset)}
+                            className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${compressionPreset === preset ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 text-gray-400 dark:bg-gray-900'}`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {compressionPreset === 'custom' && (
+                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900 rounded-2xl space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">Quality</span>
+                          <span className="text-[10px] font-black">{Math.round(customQuality * 100)}%</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="0.1" 
+                          max="1.0" 
+                          step="0.05" 
+                          value={customQuality}
+                          onChange={(e) => setCustomQuality(parseFloat(e.target.value))}
+                          className="w-full accent-black dark:accent-white"
+                        />
+                      </div>
+                    )}
+
                     <div className="w-full aspect-[21/9] rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
                       {formData.imageUrl ? (
                         <>
@@ -465,7 +596,10 @@ export default function AdminBanners() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Link URL</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Link URL</label>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Starts with / or http(s)://</span>
+                  </div>
                   <input 
                     type="text" 
                     placeholder="e.g. /shop or https://..."
@@ -516,6 +650,60 @@ export default function AdminBanners() {
         message={confirmModal.message}
         isLoading={confirmModal.isLoading}
       />
+
+      {/* Bulk Actions Bar */}
+      <AnimatePresence>
+        {selectedBanners.length > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[90] w-full max-w-2xl px-4"
+          >
+            <div className="bg-black dark:bg-white text-white dark:text-black p-6 rounded-3xl shadow-2xl flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="bg-white/20 dark:bg-black/20 px-4 py-2 rounded-xl">
+                  <span className="text-xs font-black uppercase tracking-widest">{selectedBanners.length} Selected</span>
+                </div>
+                <button 
+                  onClick={() => setSelectedBanners([])}
+                  className="text-[10px] font-black uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  Deselect All
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => handleBulkToggleStatus(true)}
+                  disabled={bulkActionLoading}
+                  className="flex items-center space-x-2 px-4 py-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  <Eye size={14} />
+                  <span>Show</span>
+                </button>
+                <button 
+                  onClick={() => handleBulkToggleStatus(false)}
+                  disabled={bulkActionLoading}
+                  className="flex items-center space-x-2 px-4 py-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  <EyeOff size={14} />
+                  <span>Hide</span>
+                </button>
+                <div className="h-8 w-[1px] bg-white/10 dark:bg-black/10 mx-2" />
+                <button 
+                  onClick={handleBulkDelete}
+                  disabled={bulkActionLoading}
+                  className="flex items-center space-x-2 px-6 py-3 bg-red-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {bulkActionLoading ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

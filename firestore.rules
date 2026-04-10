@@ -40,13 +40,13 @@ service cloud.firestore {
       return isAuthenticated() && 
         ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         request.auth.token.phone_number == "+919193731911" ||
-         request.auth.token.phone_number == "9193731911" ||
-         request.auth.token.email == "raajooothakur0@gmail.com");
+         request.auth.token.email == "raajooothakur0@gmail.com" ||
+         request.auth.token.email == "9193731911@munnu.com" ||
+         request.auth.token.phone_number == "+919193731911");
     }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'phoneNumber', 'role']) &&
+      return data.uid == request.auth.uid &&
              data.role in ['user', 'admin'];
     }
 
@@ -55,8 +55,14 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if true; // Allow everyone to check if phone/email exists during registration
+      allow create: if isAuthenticated() && request.auth.uid == userId && 
+                      isValidUser(request.resource.data) && 
+                      (request.resource.data.role == 'user' || 
+                       request.auth.token.email == "raajooothakur0@gmail.com" ||
+                       request.auth.token.email == "9193731911@munnu.com" ||
+                       request.auth.token.phone_number == "+919193731911");
       allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
     }
 
@@ -85,7 +91,7 @@ service cloud.firestore {
 
     match /coupons/{couponId} {
       allow get: if true;
-      allow list: if isAdmin();
+      allow list: if true; // Allow checking for active coupons for the shop banner
       allow update: if (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usageCount', 'totalDiscountGenerated'])) || isAdmin();
       allow create, delete: if isAdmin();
     }
@@ -98,6 +104,16 @@ service cloud.firestore {
     match /categories/{categoryId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /subscribers/{subscriberId} {
+      allow create: if true; // Allow anyone to subscribe
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /coupon_usage/{usageId} {
+      allow read: if isAuthenticated() && (usageId.startsWith(request.auth.uid) || isAdmin());
+      allow write: if isAuthenticated() && (usageId.startsWith(request.auth.uid) || isAdmin());
     }
   }
 }

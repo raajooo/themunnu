@@ -31,6 +31,8 @@ export default function AdminProducts() {
   });
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [stockStatus, setStockStatus] = useState<"all" | "in-stock" | "low-stock" | "out-of-stock">("all");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
@@ -82,11 +84,24 @@ export default function AdminProducts() {
     checkAdmin();
   }, []);
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = 
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.category.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStock = 
+      stockStatus === "all" ||
+      (stockStatus === "in-stock" && p.stock >= 10) ||
+      (stockStatus === "low-stock" && p.stock > 0 && p.stock < 10) ||
+      (stockStatus === "out-of-stock" && p.stock === 0);
+    
+    const matchesDate = 
+      (!dateRange.start || new Date(p.createdAt) >= new Date(dateRange.start)) &&
+      (!dateRange.end || new Date(p.createdAt) <= new Date(dateRange.end));
+
+    return matchesSearch && matchesStock && matchesDate;
+  });
 
   const fetchCategories = async () => {
     try {
@@ -125,32 +140,38 @@ export default function AdminProducts() {
     if (!files) return;
 
     setUploading(true);
+    const toastId = toast.loading(`Processing ${files.length} image(s)...`);
     const newImages: string[] = [...(formData.images || [])];
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-
-    const compressionOptions = {
-      maxSizeMB: 0.3, // Target 300KB to stay safe within Firestore 1MB doc limit
-      maxWidthOrHeight: 1280,
-      useWebWorker: true,
-      initialQuality: 0.8
-    };
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
       // Check file type
       if (!allowedTypes.includes(file.type)) {
-        toast.error(`${file.name} is not a valid image. Please use JPG, PNG, WEBP or GIF.`);
+        toast.error(`${file.name} is not a valid image.`, { duration: 3000 });
         continue;
       }
 
       // Allow up to 5MB for initial selection, but compress it
       if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} is too large (max 5MB allowed for upload, will be compressed)`);
+        toast.error(`${file.name} is too large (max 5MB).`, { duration: 3000 });
         continue;
       }
 
       try {
+        toast.loading(`Compressing image ${i + 1}/${files.length}...`, { id: toastId });
+        
+        const compressionOptions = {
+          maxSizeMB: 0.3,
+          maxWidthOrHeight: 1280,
+          useWebWorker: true,
+          initialQuality: 0.8,
+          onProgress: (progress: number) => {
+            toast.loading(`Image ${i + 1}/${files.length}: ${progress}%`, { id: toastId });
+          }
+        };
+
         const compressedFile = await imageCompression(file, compressionOptions);
         
         const base64 = await new Promise<string>((resolve, reject) => {
@@ -162,11 +183,12 @@ export default function AdminProducts() {
         newImages.push(base64);
       } catch (error) {
         console.error("Compression error:", error);
-        toast.error(`Failed to process ${file.name}`);
+        toast.error(`Failed to process ${file.name}`, { duration: 3000 });
       }
     }
 
     setFormData({ ...formData, images: newImages });
+    toast.success(`${files.length} image(s) processed!`, { id: toastId });
     setUploading(false);
   };
 
@@ -347,24 +369,60 @@ export default function AdminProducts() {
 
       {/* Product List */}
       <div className="bg-white dark:bg-gray-950 rounded-[3rem] border border-gray-100 dark:border-gray-900 overflow-hidden shadow-xl shadow-black/5">
-        <div className="p-8 border-b border-gray-50 dark:border-gray-900 flex justify-between items-center">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search inventory..." 
-              className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-900 rounded-full focus:outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        <div className="p-8 border-b border-gray-50 dark:border-gray-900 space-y-6">
+          <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
+            <div className="relative w-full max-w-md">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search inventory..." 
+                className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-900 rounded-full focus:outline-none"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+              <div className="flex bg-gray-50 dark:bg-gray-900 rounded-full p-1">
+                {(['all', 'in-stock', 'low-stock', 'out-of-stock'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStockStatus(s)}
+                    className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${stockStatus === s ? 'bg-black text-white dark:bg-white dark:text-black' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                  >
+                    {s.replace('-', ' ')}
+                  </button>
+                ))}
+              </div>
+              <button 
+                onClick={() => {
+                  setSearchTerm("");
+                  setStockStatus("all");
+                  setDateRange({ start: "", end: "" });
+                }}
+                className="p-3 bg-gray-50 dark:bg-gray-900 rounded-full hover:bg-gray-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
-          <div className="flex space-x-2">
-            <button 
-              onClick={() => setSearchTerm("")}
-              className="p-3 bg-gray-50 dark:bg-gray-900 rounded-full hover:bg-gray-100 transition-colors"
-            >
-              <X size={18} />
-            </button>
+
+          <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-gray-50 dark:border-gray-900">
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Date Range:</span>
+              <input 
+                type="date" 
+                className="px-4 py-2 bg-gray-50 dark:bg-gray-900 rounded-xl text-[10px] font-bold focus:outline-none"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              />
+              <span className="text-gray-400">-</span>
+              <input 
+                type="date" 
+                className="px-4 py-2 bg-gray-50 dark:bg-gray-900 rounded-xl text-[10px] font-bold focus:outline-none"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              />
+            </div>
           </div>
         </div>
 

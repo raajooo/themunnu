@@ -24,6 +24,7 @@ export default function AdminOrders() {
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'shipped' | 'delivered' | 'cancelled'>('all');
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
@@ -447,9 +448,13 @@ export default function AdminOrders() {
   };
 
   const filteredOrders = orders.filter(order => {
-    if (filter === 'all') return true;
-    if (filter === 'pending') return order.orderStatus === 'pending' || order.orderStatus === 'confirmed';
-    return order.orderStatus === filter;
+    const matchesStatus = filter === 'all' || (filter === 'pending' ? (order.orderStatus === 'pending' || order.orderStatus === 'confirmed') : order.orderStatus === filter);
+    
+    const matchesDate = 
+      (!dateRange.start || new Date(order.createdAt) >= new Date(dateRange.start)) &&
+      (!dateRange.end || new Date(order.createdAt) <= new Date(dateRange.end));
+
+    return matchesStatus && matchesDate;
   });
 
   const requestSort = (key: string) => {
@@ -521,6 +526,22 @@ export default function AdminOrders() {
           <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Manage customer fulfillment</p>
         </div>
         <div className="flex flex-wrap gap-4">
+          <div className="flex items-center space-x-2 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-900 rounded-full px-4 py-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Date:</span>
+            <input 
+              type="date" 
+              className="bg-transparent text-[10px] font-bold focus:outline-none"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+            />
+            <span className="text-gray-400">-</span>
+            <input 
+              type="date" 
+              className="bg-transparent text-[10px] font-bold focus:outline-none"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+            />
+          </div>
           <button 
             onClick={() => fetchOrders()}
             disabled={refreshing}
@@ -714,6 +735,12 @@ export default function AdminOrders() {
                     <span>Payment Status</span>
                     <span className="text-black dark:text-white">{selectedOrder.paymentStatus.toUpperCase()}</span>
                   </div>
+                  {selectedOrder.deliveryEstimate && (
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      <span>Est. Delivery</span>
+                      <span className="text-blue-500">{selectedOrder.deliveryEstimate}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">

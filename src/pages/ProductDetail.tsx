@@ -10,17 +10,37 @@ import { motion, AnimatePresence } from "motion/react";
 import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle, Maximize2, X, ArrowRight } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
+import { Helmet } from "react-helmet-async";
 import LazyImage from "../components/LazyImage";
 import ProductCard from "../components/ProductCard";
+import Breadcrumbs from "../components/Breadcrumbs";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
-  const [product, setProduct] = useState<Product | null>(null);
+
+  // Synchronous cache check
+  const getInitialProduct = () => {
+    if (!id) return null;
+    const sessionKey = `product_session_${id}`;
+    const sessionData = sessionStorage.getItem(sessionKey);
+    if (sessionData) return JSON.parse(sessionData);
+
+    const localKey = `product_${id}`;
+    const localData = localStorage.getItem(localKey);
+    if (localData) {
+      const { data, timestamp } = JSON.parse(localData);
+      if (Date.now() - timestamp < 30 * 60 * 1000) return data;
+    }
+    return null;
+  };
+
+  const initialProduct = getInitialProduct();
+  const [product, setProduct] = useState<Product | null>(initialProduct);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialProduct);
   const [selectedSize, setSelectedSize] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [currentImage, setCurrentImage] = useState(0);
@@ -72,17 +92,25 @@ export default function ProductDetail() {
     const fetchProduct = async () => {
       if (!id) return;
       try {
-        // Check local storage for product cache
-        const cachedProduct = localStorage.getItem(`product_${id}`);
-        if (cachedProduct) {
-          const { data, timestamp } = JSON.parse(cachedProduct);
-          // Cache for 30 minutes
+        // Check if we already have valid cache
+        const localKey = `product_${id}`;
+        const localData = localStorage.getItem(localKey);
+        if (localData) {
+          const { timestamp } = JSON.parse(localData);
           if (Date.now() - timestamp < 30 * 60 * 1000) {
-            setProduct(data);
             setLoading(false);
-            fetchRelatedProducts(data.category, id);
+            // If we have the product in state already (from initialProduct), 
+            // we just need to fetch related products
+            if (product) {
+              fetchRelatedProducts(product.category, id);
+            }
             return;
           }
+        }
+
+        // Only show loading if we don't have the product yet
+        if (!product) {
+          setLoading(true);
         }
 
         const docRef = doc(db, "products", id);
@@ -94,6 +122,7 @@ export default function ProductDetail() {
             data: productData,
             timestamp: Date.now()
           }));
+          sessionStorage.setItem(`product_session_${id}`, JSON.stringify(productData));
           fetchRelatedProducts(productData.category, id);
         }
       } catch (err: any) {
@@ -248,6 +277,29 @@ export default function ProductDetail() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <Helmet>
+        <title>{`${product.name} | The Munnu Sneaker Store`}</title>
+        <meta name="description" content={product.description} />
+        <meta property="og:title" content={product.name} />
+        <meta property="og:description" content={product.description} />
+        <meta property="og:image" content={product.images?.[0]} />
+        <meta property="og:type" content="product" />
+        <meta property="product:price:amount" content={product.price.toString()} />
+        <meta property="product:price:currency" content="INR" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={product.name} />
+        <meta name="twitter:description" content={product.description} />
+        <meta name="twitter:image" content={product.images?.[0]} />
+      </Helmet>
+
+      <Breadcrumbs 
+        items={[
+          { label: "SHOP", path: "/shop" },
+          { label: product.category.toUpperCase(), path: `/shop?category=${product.category}` },
+          { label: product.name.toUpperCase() }
+        ]} 
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
         {/* Image Gallery */}
         <div className="space-y-6">
@@ -283,33 +335,32 @@ export default function ProductDetail() {
                   contentClassName="!w-full !h-full"
                 >
                   <AnimatePresence mode="wait">
-                    <motion.div
-                      key={currentImage}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="w-full h-full cursor-grab active:cursor-grabbing"
-                      onPanEnd={(_, info) => {
-                        // Only swipe if not zoomed in
-                        if (!state || state.scale > 1) return;
-                        
-                        const threshold = 50;
-                        if (info.offset.x > threshold) {
-                          // Swipe Right -> Previous Image
-                          setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1));
-                        } else if (info.offset.x < -threshold) {
-                          // Swipe Left -> Next Image
-                          setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0));
-                        }
-                      }}
-                    >
-                      <img
-                        src={product.images?.[currentImage] || ""}
-                        alt={product.name}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover select-none pointer-events-none"
-                      />
-                    </motion.div>
+                      <motion.div
+                        key={currentImage}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="w-full h-full cursor-grab active:cursor-grabbing"
+                        onPanEnd={(_, info) => {
+                          // Only swipe if not zoomed in
+                          if (!state || state.scale > 1) return;
+                          
+                          const threshold = 50;
+                          if (info.offset.x > threshold) {
+                            // Swipe Right -> Previous Image
+                            setCurrentImage(prev => (prev > 0 ? prev - 1 : (product.images?.length || 1) - 1));
+                          } else if (info.offset.x < -threshold) {
+                            // Swipe Left -> Next Image
+                            setCurrentImage(prev => (prev < (product.images?.length || 0) - 1 ? prev + 1 : 0));
+                          }
+                        }}
+                      >
+                        <LazyImage
+                          src={product.images?.[currentImage] || ""}
+                          alt={product.name}
+                          className="w-full h-full object-cover select-none pointer-events-none"
+                        />
+                      </motion.div>
                   </AnimatePresence>
                 </TransformComponent>
               )}
@@ -505,18 +556,46 @@ export default function ProductDetail() {
               <h2 className="text-4xl font-black tracking-tighter uppercase mb-2">You Might Also Like</h2>
               <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">More sneakers from the {product.category} collection</p>
             </div>
-            <button 
-              onClick={() => navigate("/shop", { state: { category: product.category } })}
-              className="hidden md:flex items-center space-x-2 text-xs font-black uppercase tracking-widest hover:translate-x-2 transition-transform"
-            >
-              <span>View Collection</span>
-              <ArrowRight size={16} />
-            </button>
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={() => navigate("/shop", { state: { category: product.category } })}
+                className="hidden md:flex items-center space-x-2 text-xs font-black uppercase tracking-widest hover:translate-x-2 transition-transform"
+              >
+                <span>View Collection</span>
+                <ArrowRight size={16} />
+              </button>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => {
+                    const el = document.getElementById('related-products-scroll');
+                    if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
+                  }}
+                  className="p-3 bg-gray-50 dark:bg-gray-900 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button 
+                  onClick={() => {
+                    const el = document.getElementById('related-products-scroll');
+                    if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
+                  }}
+                  className="p-3 bg-gray-50 dark:bg-gray-900 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div 
+            id="related-products-scroll"
+            className="flex space-x-8 overflow-x-auto pb-8 scrollbar-hide snap-x snap-mandatory"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
             {relatedProducts.map(p => (
-              <ProductCard key={p.id} product={p} />
+              <div key={p.id} className="min-w-[280px] sm:min-w-[320px] snap-start">
+                <ProductCard product={p} />
+              </div>
             ))}
           </div>
         </div>
@@ -680,10 +759,9 @@ export default function ProductDetail() {
                         exit={{ scale: 0.9, opacity: 0 }}
                         className="w-full h-full flex items-center justify-center"
                       >
-                        <img
+                        <LazyImage
                           src={product.images?.[currentImage] || ""}
                           alt={product.name}
-                          referrerPolicy="no-referrer"
                           className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl select-none pointer-events-none"
                         />
                       </motion.div>

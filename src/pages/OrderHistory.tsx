@@ -146,6 +146,12 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Total</p>
                     <p className="text-sm font-black">{formatCurrency(order.totalAmount)}</p>
                   </div>
+                  {order.deliveryEstimate && (
+                    <div className="hidden sm:block">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Est. Delivery</p>
+                      <p className="text-sm font-bold text-blue-500">{order.deliveryEstimate}</p>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex items-center space-x-4">

@@ -49,6 +49,11 @@ export interface Order {
   address: Address;
   trackingId?: string;
   deliveryEstimate?: string;
+  estimatedDelivery?: {
+    min: string;
+    max: string;
+    formatted: string;
+  };
   createdAt: string;
 }
 
@@ -59,6 +64,7 @@ export interface Coupon {
   discountValue: number;
   minOrderAmount: number;
   maxDiscountAmount?: number;
+  maxUsagePerUser?: number;
   isActive: boolean;
   usageCount: number;
   totalDiscountGenerated: number;

@@ -11,7 +11,7 @@ interface NavbarProps {
   user: User | null;
 }
 
-export default function Navbar({ user }: NavbarProps) {
+export default React.memo(function Navbar({ user }: NavbarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'menu' | 'search'>('menu');
   const [isSearchOpen, setIsSearchOpen] = useState(false); // For desktop search
@@ -103,13 +103,40 @@ export default function Navbar({ user }: NavbarProps) {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
-            <Link to="/shop" className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <Link 
+              to="/shop" 
+              onMouseEnter={() => {
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = '/shop';
+                document.head.appendChild(link);
+              }}
+              className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
               SHOP
             </Link>
-            <Link to="/shop?category=trending" className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <Link 
+              to="/shop?category=trending" 
+              onMouseEnter={() => {
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = '/shop?category=trending';
+                document.head.appendChild(link);
+              }}
+              className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
               TRENDING
             </Link>
-            <Link to="/shop?category=limited" className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <Link 
+              to="/shop?category=limited" 
+              onMouseEnter={() => {
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = '/shop?category=limited';
+                document.head.appendChild(link);
+              }}
+              className="text-sm font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
               LIMITED
             </Link>
             {user?.role === 'admin' && (
@@ -210,7 +237,17 @@ export default function Navbar({ user }: NavbarProps) {
             <Link to="/cart" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors relative">
               <ShoppingCart size={20} />
             </Link>
-            <Link to={user ? "/profile" : "/login"} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors">
+            <Link 
+              to={user ? "/profile" : "/login"} 
+              state={{ from: location.pathname }} 
+              onMouseEnter={() => {
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = user ? "/profile" : "/login";
+                document.head.appendChild(link);
+              }}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors"
+            >
               <UserIcon size={20} />
             </Link>
             <button 
@@ -327,4 +364,4 @@ export default function Navbar({ user }: NavbarProps) {
     </nav>
     </>
   );
-}
+});

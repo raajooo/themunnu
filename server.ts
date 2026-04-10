@@ -10,6 +10,7 @@ import { createRequire } from "module";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import axios from "axios";
+import nodemailer from "nodemailer";
 
 const require = createRequire(import.meta.url);
 const firebaseConfig = require("./firebase-applet-config.json");
@@ -62,6 +63,17 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || "1aSgGVDpydTCYZfhFMvm3QyE"
 });
 
+// SMTP Transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_PORT === "465", // true for 465, false for other ports
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
 const app = express();
 app.use(express.json());
 
@@ -70,50 +82,248 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Munnu API is running" });
 });
 
-// --- AUTH ROUTES ---
+// --- ADMIN ROUTES ---
 
-// 1. Send OTP via Fast2SMS
-app.post("/api/auth/send-otp", async (req, res) => {
-  const { phoneNumber } = req.body;
-  if (!phoneNumber) return res.status(400).json({ error: "Phone number is required" });
+// 1. Send Coupon Reminders
+app.post("/api/admin/send-coupon-reminders", async (req, res) => {
+  try {
+    const now = new Date();
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(now.getDate() + 3);
 
-  const cleanedPhone = phoneNumber.replace(/\D/g, "").slice(-10);
-  if (cleanedPhone.length !== 10) {
-    return res.status(400).json({ error: "Invalid phone number" });
+    // 1. Fetch coupons expiring in the next 3 days
+    const couponsSnap = await firestore.collection("coupons")
+      .where("isActive", "==", true)
+      .get();
+
+    const expiringCoupons = couponsSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as any))
+      .filter(coupon => {
+        if (!coupon.expiryDate) return false;
+        const expiry = new Date(coupon.expiryDate);
+        return expiry > now && expiry <= threeDaysFromNow;
+      });
+
+    if (expiringCoupons.length === 0) {
+      return res.json({ success: true, message: "No coupons expiring soon" });
+    }
+
+    // 2. Fetch all users (in a real app, you'd filter by those who haven't used these coupons)
+    const usersSnap = await firestore.collection("users").get();
+    const users = usersSnap.docs.map(doc => doc.data());
+
+    let reminderCount = 0;
+
+    for (const user of users) {
+      if (!user.email) continue;
+
+      for (const coupon of expiringCoupons) {
+        // Check if user has used this coupon
+        const usageDoc = await firestore.collection("coupon_usage").doc(`${user.uid}_${coupon.code}`).get();
+        
+        if (!usageDoc.exists || (coupon.maxUsagePerUser && usageDoc.data()?.count < coupon.maxUsagePerUser)) {
+          // Send Mock Email
+          console.log(`[MOCK EMAIL] To: ${user.email}`);
+          console.log(`Subject: Don't miss out! Your coupon ${coupon.code} is expiring soon.`);
+          console.log(`Body: Hi ${user.displayName || 'there'}, your coupon ${coupon.code} for ${coupon.discountValue}${coupon.discountType === 'percentage' ? '%' : '₹'} off expires on ${new Date(coupon.expiryDate).toLocaleDateString()}. Use it now at Munnu!`);
+          console.log('---');
+          reminderCount++;
+        }
+      }
+    }
+
+    res.json({ success: true, message: `Sent ${reminderCount} reminders for ${expiringCoupons.length} coupons.` });
+  } catch (error: any) {
+    console.error("Reminder Error:", error);
+    res.status(500).json({ error: "Failed to send reminders", details: error.message });
+  }
+});
+
+// 2. Send Newsletter
+app.post("/api/admin/send-newsletter", async (req, res) => {
+  const { subject, message, products, subscribers } = req.body;
+
+  if (!subscribers || subscribers.length === 0) {
+    return res.status(400).json({ error: "No subscribers provided" });
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  
   try {
-    // Fast2SMS system removed. OTP is mocked for development.
-    console.log(`[MOCK] OTP ${otp} to ${cleanedPhone}`);
+    const productHtml = products && products.length > 0 
+      ? `
+        <div style="margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          ${products.map((p: any) => `
+            <div style="border: 1px solid #eee; border-radius: 15px; padding: 15px; text-align: center;">
+              <img src="${p.image}" alt="${p.name}" style="width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; margin-bottom: 10px;">
+              <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; font-weight: 900;">${p.name}</h4>
+              <p style="margin: 5px 0; font-weight: bold; color: #000;">₹${p.price}</p>
+              <a href="https://munnu.in/product/${p.id}" style="display: inline-block; padding: 8px 15px; background: #000; color: #fff; text-decoration: none; border-radius: 5px; font-size: 10px; font-weight: bold; text-transform: uppercase;">View Product</a>
+            </div>
+          `).join("")}
+        </div>
+      `
+      : "";
 
-    const otpToken = jwt.sign({ phoneNumber: cleanedPhone, otp }, JWT_SECRET, { expiresIn: "5m" });
-    res.json({ success: true, otpToken, message: "OTP sent successfully (Mocked)" });
+    const mailOptions = {
+      from: `"Munnu Sneaker Store" <${process.env.SMTP_USER}>`,
+      bcc: subscribers.join(", "), // Use BCC to hide emails from each other
+      subject: subject,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #eee; border-radius: 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="font-size: 32px; font-weight: 900; letter-spacing: -2px; margin: 0;">MUNNU</h1>
+            <p style="font-size: 10px; font-weight: bold; color: #999; text-transform: uppercase; letter-spacing: 2px;">The Sneaker Destination</p>
+          </div>
+          
+          <div style="font-size: 16px; line-height: 1.6; color: #333;">
+            ${message.replace(/\n/g, "<br>")}
+          </div>
+
+          ${productHtml}
+
+          <div style="margin-top: 40px; padding-top: 20px; border-t: 1px solid #eee; text-align: center;">
+            <p style="font-size: 12px; color: #999;">You're receiving this because you subscribed to Munnu updates.</p>
+            <p style="font-size: 12px; color: #999;">© 2026 MUNNU Sneaker Store. All rights reserved.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      await transporter.sendMail(mailOptions);
+      console.log(`Newsletter "${subject}" sent to ${subscribers.length} subscribers`);
+    } else {
+      console.log(`[MOCK] Newsletter "${subject}" to ${subscribers.length} subscribers (SMTP not configured)`);
+    }
+
+    res.json({ success: true, message: `Newsletter sent to ${subscribers.length} subscribers` });
+  } catch (error: any) {
+    console.error("Newsletter Send Error:", error);
+    res.status(500).json({ error: "Failed to send newsletter", details: error.message });
+  }
+});
+
+// --- AUTH ROUTES ---
+
+// 1. Send OTP via Email (Google SMTP)
+app.post("/api/auth/send-otp", async (req, res) => {
+  const { identifier, type } = req.body; // type: 'register' or 'forgot-password'
+  if (!identifier) return res.status(400).json({ error: "Email or Phone number is required" });
+
+  try {
+    console.log(`[AUTH] Sending OTP for ${identifier} (type: ${type})`);
+    let email = "";
+    let phoneNumber = "";
+    const isEmail = identifier.includes("@");
+
+    if (type === "forgot-password") {
+      if (!isEmail) {
+        return res.status(400).json({ error: "Please provide your registered email address" });
+      }
+      
+      const emailQuery = await firestore.collection("users").where("email", "==", identifier.toLowerCase()).get();
+      if (emailQuery.empty) {
+        return res.status(400).json({ error: "User not found with this email" });
+      }
+      const userData = emailQuery.docs[0].data();
+      email = userData.email;
+      phoneNumber = userData.phoneNumber;
+    } else if (type === "register") {
+      if (!isEmail) {
+        return res.status(400).json({ error: "Please provide a valid email for registration OTP" });
+      }
+      email = identifier.toLowerCase();
+      
+      // Check if email already exists
+      const emailSnap = await firestore.collection("users").where("email", "==", email).get();
+      if (!emailSnap.empty) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+
+      const { phoneNumber: rawPhone } = req.body;
+      if (rawPhone && typeof rawPhone === 'string') {
+        const phone = rawPhone.replace(/\D/g, "").slice(-10);
+        if (phone) {
+          const phoneSnap = await firestore.collection("users").where("phoneNumber", "==", phone).get();
+          if (!phoneSnap.empty) {
+            return res.status(400).json({ error: "Phone number already registered" });
+          }
+          phoneNumber = phone;
+        }
+      }
+    } else {
+      return res.status(400).json({ error: "Invalid OTP type" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Send Email
+    const mailOptions = {
+      from: `"Munnu Support" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Your Munnu Verification Code",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 500px; margin: auto;">
+          <h2 style="color: #000; text-align: center; text-transform: uppercase; letter-spacing: 2px;">Munnu Verification</h2>
+          <p style="font-size: 16px; color: #555;">Hi there,</p>
+          <p style="font-size: 16px; color: #555;">Use the following OTP to verify your account. This code is valid for 5 minutes.</p>
+          <div style="background: #f9f9f9; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 10px; color: #000;">${otp}</span>
+          </div>
+          <p style="font-size: 12px; color: #999; text-align: center;">If you didn't request this, please ignore this email.</p>
+        </div>
+      `,
+    };
+
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      await transporter.sendMail(mailOptions);
+      console.log(`OTP ${otp} sent to ${email}`);
+    } else {
+      console.log(`[MOCK] OTP ${otp} to ${email} (SMTP not configured)`);
+    }
+
+    const otpToken = jwt.sign({ email, otp, phoneNumber }, JWT_SECRET, { expiresIn: "10m" });
+    res.json({ success: true, otpToken, email, phoneNumber, message: "OTP sent successfully to your email" });
   } catch (error: any) {
     console.error("OTP Error:", error);
-    res.status(500).json({ error: "Failed to send OTP" });
+    res.status(500).json({ error: "Failed to send OTP. Please try again later." });
   }
 });
 
 // 2. Register User
 app.post("/api/auth/register", async (req, res) => {
-  const { phoneNumber: rawPhone, fullName, password, email } = req.body;
+  const { phoneNumber: rawPhone, fullName, password, email, otp, otpToken } = req.body;
+  
+  if (!rawPhone || typeof rawPhone !== 'string') {
+    return res.status(400).json({ error: "Phone number is required" });
+  }
+
   const phoneNumber = rawPhone.replace(/\D/g, "").slice(-10);
+  if (!phoneNumber) {
+    return res.status(400).json({ error: "Invalid phone number" });
+  }
 
   try {
+    console.log(`[AUTH] Registering user: ${email} (${phoneNumber})`);
+    // Verify OTP
+    if (!otpToken || !otp) {
+      return res.status(400).json({ error: "OTP verification required" });
+    }
+
+    const decoded = jwt.verify(otpToken, JWT_SECRET) as { email: string, otp: string };
+    if (decoded.email !== email.toLowerCase() || decoded.otp !== otp) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+
     // Check if phone number already exists
     const phoneSnap = await firestore.collection("users").where("phoneNumber", "==", phoneNumber).get();
     if (!phoneSnap.empty) {
       return res.status(400).json({ error: "Phone number already registered" });
     }
 
-    // Check if email already exists (if provided)
-    if (email) {
-      const emailSnap = await firestore.collection("users").where("email", "==", email.toLowerCase()).get();
-      if (!emailSnap.empty) {
-        return res.status(400).json({ error: "Email already registered" });
-      }
+    // Check if email already exists
+    const emailSnap = await firestore.collection("users").where("email", "==", email.toLowerCase()).get();
+    if (!emailSnap.empty) {
+      return res.status(400).json({ error: "Email already registered" });
     }
 
     const adminEmail = "raajooothakur0@gmail.com";
@@ -128,7 +338,7 @@ app.post("/api/auth/register", async (req, res) => {
       uid: phoneNumber,
       phoneNumber,
       displayName: fullName,
-      email: email ? email.toLowerCase() : "",
+      email: email.toLowerCase(),
       password: hashedPassword,
       role: isAdminUser ? "admin" : "user",
       addresses: [],
@@ -213,11 +423,19 @@ app.post("/api/auth/login", async (req, res) => {
 // 4. Reset Password
 app.post("/api/auth/reset-password", async (req, res) => {
   const { phoneNumber: rawPhone, newPassword, otp, otpToken } = req.body;
-  const phoneNumber = rawPhone.replace(/\D/g, "").slice(-10);
-
+  
   try {
-    const decoded = jwt.verify(otpToken, JWT_SECRET) as { phoneNumber: string, otp: string };
-    if (decoded.phoneNumber !== phoneNumber || decoded.otp !== otp) {
+    const decoded = jwt.verify(otpToken, JWT_SECRET) as { email: string, otp: string, phoneNumber?: string };
+    
+    // If we have phoneNumber in token (from forgot-password flow), use it.
+    // Otherwise use the one provided in body.
+    const phoneNumber = decoded.phoneNumber || (rawPhone ? rawPhone.replace(/\D/g, "").slice(-10) : "");
+
+    if (!phoneNumber) {
+      return res.status(400).json({ error: "User identification failed. Please try again." });
+    }
+
+    if (decoded.otp !== otp) {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 

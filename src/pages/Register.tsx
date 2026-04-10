@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { auth, googleProvider, facebookProvider } from "../firebase";
-import { createUserWithEmailAndPassword, signInWithPopup, AuthProvider } from "firebase/auth";
-import { doc, setDoc, getDocs, collection, query, where, getDoc } from "firebase/firestore";
+import { useNavigate, Link, useLocation } from "react-router-dom";
+import { auth } from "../firebase";
+import { signInWithCustomToken } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "react-hot-toast";
@@ -16,38 +16,52 @@ interface RegisterProps {
 }
 
 export default function Register({ user }: RegisterProps) {
+  const [step, setStep] = useState<"form" | "otp">("form");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [honeypot, setHoneypot] = useState(""); // Bot protection
+  const [otpToken, setOtpToken] = useState("");
+  const [resendTimer, setResendTimer] = useState(0);
   const [formData, setFormData] = useState({
     phoneNumber: "",
     fullName: "",
     email: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    otp: ""
   });
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const from = location.state?.from || "/";
 
   React.useEffect(() => {
     if (user) {
-      navigate("/profile");
+      navigate(from, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, from]);
 
-  const handleRegister = async (e: React.FormEvent) => {
+  React.useEffect(() => {
+    if (resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendTimer]);
+
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Bot protection: if honeypot is filled, ignore the request
-    if (honeypot) {
-      console.warn("Bot detected via honeypot");
+    if (honeypot) return;
+
+    if (!checkRateLimit("register_otp", 3, 60000)) {
+      toast.error("Too many attempts. Please wait a minute.");
       return;
     }
 
-    // Rate limiting: max 3 attempts per minute for registration
-    if (!checkRateLimit("register", 3, 60000)) {
-      toast.error("Too many registration attempts. Please wait a minute.");
+    if (!formData.email.includes("@")) {
+      toast.error("Please enter a valid email address");
       return;
     }
 
@@ -66,90 +80,81 @@ export default function Register({ user }: RegisterProps) {
     }
 
     setLoading(true);
+    const otpToast = toast.loading("Sending verification code...");
     try {
-      // Check if phone number already exists in Firestore (since it's our primary identifier)
-      const phoneSnap = await getDocs(query(collection(db, "users"), where("phoneNumber", "==", phone)));
-      if (!phoneSnap.empty) {
-        toast.error("Phone number already registered");
-        setLoading(false);
-        return;
+      const response = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          identifier: formData.email,
+          phoneNumber: formData.phoneNumber,
+          type: "register"
+        })
+      }).catch(err => {
+        console.error("Fetch error:", err);
+        throw new Error("Network error: Could not reach the server. Please check your internet connection or try again later.");
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send OTP");
       }
 
-      // Use email if provided, otherwise use phone-based email
-      const email = formData.email ? formData.email.toLowerCase() : `${phone}@munnu.com`;
-
-      // 1. Create Firebase Auth User
-      const userCredential = await createUserWithEmailAndPassword(auth, email, formData.password);
-      const firebaseUser = userCredential.user;
-
-      // 2. Create User Profile in Firestore
-      const adminEmail = "raajooothakur0@gmail.com";
-      const adminPhone = "9193731911";
-      const isAdmin = (phone === adminPhone || (formData.email && formData.email.toLowerCase() === adminEmail));
-
-      const userDoc: UserType = {
-        uid: firebaseUser.uid,
-        phoneNumber: phone,
-        displayName: formData.fullName,
-        email: formData.email ? formData.email.toLowerCase() : "",
-        role: isAdmin ? "admin" : "user",
-        addresses: [],
-        createdAt: new Date().toISOString()
-      };
-
-      await setDoc(doc(db, "users", firebaseUser.uid), userDoc);
-      
-      toast.success("Registration successful!");
-      navigate("/");
+      setOtpToken(data.otpToken);
+      setStep("otp");
+      setResendTimer(60);
+      toast.success("Verification code sent to your email!", { id: otpToast });
     } catch (error: any) {
-      console.error("Registration Error:", error);
-      let message = "Registration failed. Please try again.";
-      if (error.code === "auth/email-already-in-use") message = "Email already in use.";
-      if (error.code === "auth/network-request-failed") message = "Network error. Please check your internet connection or disable ad blockers/Brave shields.";
-      toast.error(message);
+      console.error("OTP Error:", error);
+      toast.error(error.message || "Failed to send verification code.", { id: otpToast });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSocialLogin = async (provider: AuthProvider, providerName: string) => {
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.otp || formData.otp.length !== 6) {
+      toast.error("Please enter the 6-digit verification code");
+      return;
+    }
+
     setLoading(true);
+    const regToast = toast.loading("Creating your account...");
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const phone = formData.phoneNumber.replace(/\D/g, "").slice(-10);
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phoneNumber: phone,
+          fullName: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+          otp: formData.otp,
+          otpToken
+        })
+      }).catch(err => {
+        console.error("Fetch error:", err);
+        throw new Error("Network error: Could not reach the server. Please check your internet connection or try again later.");
+      });
 
-      // Check if user exists in Firestore
-      const userDocRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(userDocRef);
+      const data = await response.json();
 
-      if (!docSnap.exists()) {
-        // Create new user document
-        const adminEmail = "raajooothakur0@gmail.com";
-        const isAdmin = (user.email && user.email.toLowerCase() === adminEmail);
-
-        const newUser: UserType = {
-          uid: user.uid,
-          phoneNumber: user.phoneNumber || "",
-          email: user.email || "",
-          displayName: user.displayName || "",
-          role: isAdmin ? "admin" : "user",
-          addresses: [],
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(userDocRef, newUser);
+      if (!response.ok) {
+        throw new Error(data.error || "Registration failed");
       }
 
-      toast.success(`Registered with ${providerName}!`);
-      navigate("/profile");
+      if (data.customToken) {
+        await signInWithCustomToken(auth, data.customToken);
+        toast.success("Registration successful!", { id: regToast });
+        navigate(from, { replace: true });
+      }
     } catch (error: any) {
-      console.error(`${providerName} Registration Error:`, error);
-      let message = `${providerName} registration failed.`;
-      if (error.code === 'auth/popup-closed-by-user') {
-        message = "Registration popup closed.";
-      } else if (error.code === 'auth/network-request-failed') {
-        message = "Network error. Please check your internet connection or disable ad blockers/Brave shields.";
-      }
-      toast.error(message);
+      console.error("Registration Error:", error);
+      toast.error(error.message || "Registration failed. Please try again.", { id: regToast });
     } finally {
       setLoading(false);
     }
@@ -158,152 +163,179 @@ export default function Register({ user }: RegisterProps) {
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-20">
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         className="w-full max-w-md bg-white dark:bg-gray-950 p-8 md:p-12 rounded-[2.5rem] border border-gray-100 dark:border-gray-900 shadow-2xl shadow-black/5"
       >
         <div className="text-center mb-10">
           <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">Join Munnu</h1>
           <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">
-            Create your account
+            {step === "form" ? "Create your account" : "Verify your email"}
           </p>
         </div>
 
-        <form onSubmit={handleRegister} className="space-y-4">
-          {/* Honeypot field - hidden from users but visible to bots */}
-          <div className="hidden" aria-hidden="true">
-            <input 
-              type="text" 
-              name="website" 
-              value={honeypot} 
-              onChange={(e) => setHoneypot(e.target.value)} 
-              tabIndex={-1} 
-              autoComplete="off" 
-            />
-          </div>
-
-          <div className="relative">
-            <User className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type="text" 
-              placeholder="Full Name" 
-              className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-              value={formData.fullName}
-              onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-              required
-            />
-          </div>
-          <div className="relative">
-            <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type="tel" 
-              placeholder="Phone Number" 
-              className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-              value={formData.phoneNumber}
-              onChange={(e) => setFormData({...formData, phoneNumber: e.target.value.replace(/\D/g, "")})}
-              maxLength={10}
-              required
-            />
-          </div>
-          <div className="relative">
-            <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type="email" 
-              placeholder="Email (Recommended for Login)" 
-              className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-            />
-          </div>
-          <div className="relative">
-            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type={showPassword ? "text" : "password"} 
-              placeholder="Create Password" 
-              className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+        <AnimatePresence mode="wait">
+          {step === "form" ? (
+            <motion.form 
+              key="register-form"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              onSubmit={handleSendOtp} 
+              className="space-y-4"
             >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
-          </div>
-          <div className="relative">
-            <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type={showConfirmPassword ? "text" : "password"} 
-              placeholder="Confirm Password" 
-              className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
-            >
-              {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
-          </div>
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 mt-4"
-          >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : (
-              <>Register <ArrowRight className="ml-2" size={18} /></>
-            )}
-          </button>
-          <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mt-4">
-            Already have an account? <Link to="/login" className="text-black dark:text-white underline">Login</Link>
-          </p>
-        </form>
+              {/* Honeypot field - hidden from users but visible to bots */}
+              <div className="hidden" aria-hidden="true">
+                <input 
+                  type="text" 
+                  name="website" 
+                  value={honeypot} 
+                  onChange={(e) => setHoneypot(e.target.value)} 
+                  tabIndex={-1} 
+                  autoComplete="off" 
+                />
+              </div>
 
-        <div className="mt-8">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200 dark:border-gray-800"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white dark:bg-gray-950 text-gray-500 font-bold uppercase tracking-widest text-[10px]">Or continue with</span>
-            </div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => handleSocialLogin(googleProvider, 'Google')}
-              disabled={loading}
-              className="w-full inline-flex justify-center py-3 px-4 border border-gray-300 dark:border-gray-800 rounded-2xl shadow-sm bg-white dark:bg-gray-900 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+              <div className="relative">
+                <User className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type="text" 
+                  placeholder="Full Name" 
+                  className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                  value={formData.fullName}
+                  onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="relative">
+                <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type="tel" 
+                  placeholder="Phone Number" 
+                  className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                  value={formData.phoneNumber}
+                  onChange={(e) => setFormData({...formData, phoneNumber: e.target.value.replace(/\D/g, "")})}
+                  maxLength={10}
+                  required
+                />
+              </div>
+              <div className="relative">
+                <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type="email" 
+                  placeholder="Email Address" 
+                  className="w-full pl-14 pr-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="Create Password" 
+                  className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              <div className="relative">
+                <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type={showConfirmPassword ? "text" : "password"} 
+                  placeholder="Confirm Password" 
+                  className="w-full pl-14 pr-14 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 mt-4"
+              >
+                {loading ? <Loader2 className="animate-spin" size={20} /> : (
+                  <>Continue <ArrowRight className="ml-2" size={18} /></>
+                )}
+              </button>
+              <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mt-4">
+                Already have an account? <Link to="/login" state={{ from }} className="text-black dark:text-white underline">Login</Link>
+              </p>
+            </motion.form>
+          ) : (
+            <motion.form 
+              key="otp-form"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              onSubmit={handleRegister} 
+              className="space-y-6"
             >
-              <svg className="h-5 w-5" aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M12.0003 4.75C13.7703 4.75 15.3553 5.36002 16.6053 6.54998L20.0303 3.125C17.9502 1.19 15.2353 0 12.0003 0C7.31028 0 3.25527 2.69 1.28027 6.60998L5.27028 9.70498C6.21525 6.86002 8.87028 4.75 12.0003 4.75Z" fill="#EA4335" />
-                <path d="M23.49 12.275C23.49 11.49 23.415 10.73 23.3 10H12V14.51H18.47C18.18 15.99 17.34 17.25 16.08 18.1L19.945 21.1C22.2 19.01 23.49 15.92 23.49 12.275Z" fill="#4285F4" />
-                <path d="M5.26498 14.2949C5.02498 13.5699 4.88501 12.7999 4.88501 11.9999C4.88501 11.1999 5.01998 10.4299 5.26498 9.7049L1.275 6.60986C0.46 8.22986 0 10.0599 0 11.9999C0 13.9399 0.46 15.7699 1.28 17.3899L5.26498 14.2949Z" fill="#FBBC05" />
-                <path d="M12.0004 24.0001C15.2404 24.0001 17.9654 22.935 19.9454 21.095L16.0804 18.095C15.0054 18.82 13.6204 19.245 12.0004 19.245C8.8704 19.245 6.21537 17.135 5.26537 14.29L1.27539 17.385C3.25539 21.31 7.3104 24.0001 12.0004 24.0001Z" fill="#34A853" />
-              </svg>
-              <span className="sr-only">Sign up with Google</span>
-            </button>
+              <div className="text-center mb-4">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  Verification code sent to {formData.email}
+                </p>
+              </div>
+              <div className="relative">
+                <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input 
+                  type="text" 
+                  placeholder="6-digit OTP" 
+                  className="w-full pl-14 pr-6 py-5 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-black text-2xl tracking-[0.5em] text-center"
+                  value={formData.otp}
+                  onChange={(e) => setFormData({...formData, otp: e.target.value.replace(/\D/g, "")})}
+                  maxLength={6}
+                  required
+                />
+              </div>
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full py-5 bg-black dark:bg-white text-white dark:text-black font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="animate-spin" size={20} /> : (
+                  <>Verify & Register <ArrowRight className="ml-2" size={18} /></>
+                )}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleSocialLogin(facebookProvider, 'Facebook')}
-              disabled={loading}
-              className="w-full inline-flex justify-center py-3 px-4 border border-gray-300 dark:border-gray-800 rounded-2xl shadow-sm bg-white dark:bg-gray-900 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-            >
-              <svg className="h-5 w-5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path fillRule="evenodd" d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" clipRule="evenodd" />
-              </svg>
-              <span className="sr-only">Sign up with Facebook</span>
-            </button>
-          </div>
-        </div>
+              <div className="flex flex-col items-center space-y-4">
+                <button 
+                  type="button"
+                  disabled={loading || resendTimer > 0}
+                  onClick={handleSendOtp}
+                  className="text-xs font-bold text-gray-400 uppercase tracking-widest hover:text-black dark:hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend Verification Code"}
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => setStep("form")}
+                  className="text-xs font-bold text-gray-400 uppercase tracking-widest hover:text-black dark:hover:text-white transition-colors"
+                >
+                  Change Details
+                </button>
+              </div>
+            </motion.form>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

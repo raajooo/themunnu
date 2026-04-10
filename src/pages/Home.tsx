@@ -1,23 +1,44 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { collection, query, where, limit, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, limit, getDocs, orderBy, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { Product, Banner, Category } from "../types";
 import ProductCard from "../components/ProductCard";
-import { ArrowRight, Zap, TrendingUp, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, Zap, TrendingUp, Star, ChevronLeft, ChevronRight, CheckCircle2, Loader2 } from "lucide-react";
 import LazyImage from "../components/LazyImage";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
+import { toast } from "react-hot-toast";
 
 export default function Home() {
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
-  const [trendingProducts, setTrendingProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [banners, setBanners] = useState<Banner[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Initialize state from cache to prevent flicker
+  const getCachedData = () => {
+    const sessionData = sessionStorage.getItem("home_data_session");
+    if (sessionData) return JSON.parse(sessionData);
+    
+    const localData = localStorage.getItem("home_data");
+    if (localData) {
+      const parsed = JSON.parse(localData);
+      if (Date.now() - parsed.timestamp < 30 * 60 * 1000) return parsed;
+    }
+    return null;
+  };
+
+  const cached = getCachedData();
+
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>(cached?.featured || []);
+  const [trendingProducts, setTrendingProducts] = useState<Product[]>(cached?.trending || []);
+  const [categories, setCategories] = useState<Category[]>(cached?.cats || []);
+  const [banners, setBanners] = useState<Banner[]>(cached?.bans || []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<Error | null>(null);
 
   const [currentBanner, setCurrentBanner] = useState(0);
+  
+  // Newsletter State
+  const [email, setEmail] = useState("");
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
 
   const nextBanner = useCallback(() => {
     setCurrentBanner((prev) => (prev + 1) % (banners.length || 1));
@@ -26,6 +47,38 @@ export default function Home() {
   const prevBanner = useCallback(() => {
     setCurrentBanner((prev) => (prev - 1 + (banners.length || 1)) % (banners.length || 1));
   }, [banners.length]);
+
+  const handleSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    
+    setSubscribing(true);
+    try {
+      // Check if already subscribed
+      const q = query(collection(db, "subscribers"), where("email", "==", email.toLowerCase()));
+      const snap = await getDocs(q);
+      
+      if (!snap.empty) {
+        toast.error("You are already subscribed!");
+        setSubscribed(true);
+        return;
+      }
+      
+      await addDoc(collection(db, "subscribers"), {
+        email: email.toLowerCase(),
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+      
+      setSubscribed(true);
+      toast.success("Welcome to the Inner Circle!");
+    } catch (error) {
+      console.error("Subscription error:", error);
+      toast.error("Failed to subscribe. Please try again.");
+    } finally {
+      setSubscribing(false);
+    }
+  };
 
   useEffect(() => {
     if (banners.length > 1) {
@@ -41,19 +94,20 @@ export default function Home() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Check local storage for cached data
-        const cachedData = localStorage.getItem("home_data");
-        if (cachedData) {
-          const { featured, trending, cats, bans, timestamp } = JSON.parse(cachedData);
-          // Cache for 30 minutes to save quota
-          if (Date.now() - timestamp < 30 * 60 * 1000) {
-            setFeaturedProducts(featured);
-            setTrendingProducts(trending);
-            setCategories(cats);
-            setBanners(bans);
+        // If we already have valid cache, we can skip the background fetch 
+        // or do it silently without showing loading state
+        const localData = localStorage.getItem("home_data");
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (Date.now() - parsed.timestamp < 30 * 60 * 1000) {
             setLoading(false);
             return;
           }
+        }
+
+        // Only show loading if we don't have data yet
+        if (featuredProducts.length === 0) {
+          setLoading(true);
         }
 
         const productsRef = collection(db, "products");
@@ -62,24 +116,26 @@ export default function Home() {
         const qFeatured = query(productsRef, where("isFeatured", "==", true), limit(4));
         const featuredSnap = await getDocs(qFeatured);
         const featured = featuredSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-        setFeaturedProducts(featured);
 
         // Fetch Trending
         const qTrending = query(productsRef, where("isTrending", "==", true), limit(4));
         const trendingSnap = await getDocs(qTrending);
         const trending = trendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-        setTrendingProducts(trending);
 
         // Fetch Categories
         const qCategories = collection(db, "categories");
         const categoriesSnap = await getDocs(qCategories);
         const cats = categoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
-        setCategories(cats);
 
         // Fetch Banners
         const qBanners = query(collection(db, "banners"), where("isActive", "==", true), orderBy("order", "asc"));
         const bannersSnap = await getDocs(qBanners);
         const bans = bannersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Banner));
+
+        // Update state only after all data is fetched to avoid multiple renders
+        setFeaturedProducts(featured);
+        setTrendingProducts(trending);
+        setCategories(cats);
         setBanners(bans);
 
         // Cache the data in localStorage
@@ -89,6 +145,14 @@ export default function Home() {
           cats,
           bans,
           timestamp: Date.now()
+        }));
+
+        // Also cache in session storage for instant back-navigation
+        sessionStorage.setItem("home_data_session", JSON.stringify({
+          featured,
+          trending,
+          cats,
+          bans
         }));
       } catch (err: any) {
         console.error("Error fetching home data:", err);
@@ -332,16 +396,47 @@ export default function Home() {
           <div className="relative z-10 max-w-2xl mx-auto">
             <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-6 uppercase">Join the Inner Circle</h2>
             <p className="text-gray-400 mb-10 text-lg">Get early access to limited drops, exclusive events, and the latest sneaker news.</p>
-            <form className="flex flex-col md:flex-row gap-4">
-              <input 
-                type="email" 
-                placeholder="Enter your email" 
-                className="flex-grow bg-white/10 border border-white/20 rounded-full px-8 py-4 focus:outline-none focus:border-white transition-colors"
-              />
-              <button className="bg-white text-black font-black px-10 py-4 rounded-full hover:bg-gray-200 transition-colors uppercase tracking-widest text-sm">
-                Subscribe
-              </button>
-            </form>
+            
+            <AnimatePresence mode="wait">
+              {subscribed ? (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex flex-col items-center space-y-4"
+                >
+                  <div className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <p className="text-2xl font-black uppercase tracking-widest">You're in!</p>
+                  <p className="text-gray-400">Welcome to the inner circle. Stay tuned for updates.</p>
+                </motion.div>
+              ) : (
+                <motion.form 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onSubmit={handleSubscribe} 
+                  className="flex flex-col md:flex-row gap-4"
+                >
+                  <input 
+                    type="email" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email" 
+                    required
+                    className="flex-grow bg-white/10 border border-white/20 rounded-full px-8 py-4 focus:outline-none focus:border-white transition-colors"
+                  />
+                  <button 
+                    type="submit"
+                    disabled={subscribing}
+                    className="bg-white text-black font-black px-10 py-4 rounded-full hover:bg-gray-200 transition-colors uppercase tracking-widest text-sm flex items-center justify-center disabled:opacity-50"
+                  >
+                    {subscribing ? <Loader2 className="animate-spin mr-2" size={18} /> : null}
+                    Subscribe
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
           </div>
           {/* Decorative elements */}
           <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />

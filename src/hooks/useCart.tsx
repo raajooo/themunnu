@@ -42,7 +42,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         price: product.price,
         quantity,
         size,
-        image: product.images[0]
+        image: product.images?.[0] || "https://picsum.photos/seed/sneaker/400/400"
       }];
     });
   };

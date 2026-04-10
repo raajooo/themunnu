@@ -24,7 +24,7 @@ export default function Layout({ user }: LayoutProps) {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
           >
-            <Outlet />
+            <Outlet context={{ user }} />
           </motion.div>
         </AnimatePresence>
       </main>
