@@ -29,6 +29,8 @@ export default function AdminOrders() {
   const [error, setError] = useState<Error | null>(null);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -102,11 +104,16 @@ export default function AdminOrders() {
 
       // Update cache
       if (!isLoadMore) {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({
-          data: finalOrders,
-          total: isInitial ? totalOrders : totalOrders, // Use current total
-          timestamp: Date.now()
-        }));
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({
+            data: finalOrders.slice(0, 50),
+            total: isInitial ? totalOrders : totalOrders, // Use current total
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn("Could not save to localStorage, quota exceeded");
+          localStorage.removeItem(CACHE_KEY);
+        }
       }
     } catch (err: any) {
       if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
@@ -173,6 +180,46 @@ export default function AdminOrders() {
       setShipping(false);
     }
   };
+
+  const handleBulkShipment = async () => {
+    if (selectedOrders.length === 0) return;
+    setBulkActionLoading(true);
+    const toastId = toast.loading(`Creating shipments for ${selectedOrders.length} orders...`);
+    
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const orderId of selectedOrders) {
+      try {
+        const response = await fetch('/api/shipping/create-shipment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId })
+        });
+        const data = await response.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        failCount++;
+      }
+    }
+
+    toast.dismiss(toastId);
+    if (successCount > 0) {
+      toast.success(`Successfully created ${successCount} shipments.`);
+    }
+    if (failCount > 0) {
+      toast.error(`Failed to create ${failCount} shipments.`);
+    }
+    
+    setSelectedOrders([]);
+    fetchOrders();
+    setBulkActionLoading(false);
+  };
+
 
   const printLabel = (order: Order) => {
     const printWindow = window.open('', '_blank');
@@ -572,12 +619,57 @@ export default function AdminOrders() {
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      {selectedOrders.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-black dark:bg-white text-white dark:text-black p-4 rounded-3xl flex items-center justify-between shadow-2xl mb-8"
+        >
+          <div className="flex items-center space-x-4 px-4">
+            <span className="text-sm font-black uppercase tracking-widest bg-white/20 dark:bg-black/20 px-4 py-2 rounded-full">
+              {selectedOrders.length} Selected
+            </span>
+          </div>
+          <div className="flex items-center space-x-4 px-4">
+            <button 
+              onClick={handleBulkShipment}
+              disabled={bulkActionLoading}
+              className="flex items-center space-x-2 text-xs font-black uppercase tracking-widest hover:opacity-70 transition-opacity disabled:opacity-50"
+            >
+              {bulkActionLoading ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />}
+              <span>Ship with Delivery One</span>
+            </button>
+            <button 
+              onClick={() => setSelectedOrders([])}
+              className="p-2 hover:bg-white/20 dark:hover:bg-black/20 rounded-full transition-colors"
+            >
+              <XCircle size={20} />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white dark:bg-gray-950 rounded-[3rem] border border-gray-100 dark:border-gray-900 overflow-hidden shadow-xl shadow-black/5">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50 dark:border-gray-900">
+                  <th className="px-8 py-6 w-10">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
+                      checked={selectedOrders.length === filteredOrders.length && filteredOrders.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedOrders(filteredOrders.map(o => o.id));
+                        } else {
+                          setSelectedOrders([]);
+                        }
+                      }}
+                    />
+                  </th>
                   <th className="px-8 py-6 cursor-pointer hover:text-black dark:hover:text-white transition-colors group" onClick={() => requestSort('createdAt')}>
                     <div className="flex items-center space-x-1">
                       <span>Order</span>
@@ -606,8 +698,22 @@ export default function AdminOrders() {
                     <tr 
                       key={order.id} 
                       onClick={() => setSelectedOrder(order)}
-                      className={`cursor-pointer transition-colors ${selectedOrder?.id === order.id ? 'bg-gray-50 dark:bg-gray-900' : 'hover:bg-gray-50/50 dark:hover:bg-gray-900/50'}`}
+                      className={`cursor-pointer transition-colors ${selectedOrder?.id === order.id ? 'bg-gray-50 dark:bg-gray-900' : 'hover:bg-gray-50/50 dark:hover:bg-gray-900/50'} ${selectedOrders.includes(order.id) ? 'bg-gray-50 dark:bg-gray-900' : ''}`}
                     >
+                      <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
+                          checked={selectedOrders.includes(order.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedOrders(prev => [...prev, order.id]);
+                            } else {
+                              setSelectedOrders(prev => prev.filter(id => id !== order.id));
+                            }
+                          }}
+                        />
+                      </td>
                       <td className="px-8 py-6">
                         <div className="flex items-center space-x-3">
                           <div>

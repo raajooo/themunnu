@@ -1,23 +1,43 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, orderBy, limit, getCountFromServer } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, Timestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { motion } from "motion/react";
-import { ShoppingCart, Package, Users, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ShoppingCart, Package, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Calendar } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
+import { 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell
+} from "recharts";
+import { 
+  startOfMonth, 
+  subMonths, 
+  endOfMonth, 
+  isWithinInterval, 
+  format, 
+  subDays, 
+  eachDayOfInterval,
+  isSameDay
+} from "date-fns";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    revenue: 0,
-    orders: 0,
-    products: 0,
-    users: 0
-  });
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [productsCount, setProductsCount] = useState(0);
+  const [usersCount, setUsersCount] = useState(0);
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -26,51 +46,121 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Use getCountFromServer for efficient counting (1 read per 1000 docs)
-        const ordersCountSnap = await getCountFromServer(collection(db, "orders"));
-        const productsCountSnap = await getCountFromServer(collection(db, "products"));
-        const usersCountSnap = await getCountFromServer(collection(db, "users"));
-
-        // For revenue, we still need to fetch orders to sum them up
-        // In a real app, you'd maintain a stats document to avoid this
-        // We'll limit this to the last 100 orders for a "recent revenue" estimate or just fetch all if needed
-        // But to save quota, let's just fetch the last 50 for now or handle the error
-        const ordersSnap = await getDocs(query(collection(db, "orders"), limit(100)));
-        const totalRevenue = ordersSnap.docs.reduce((sum, doc) => sum + (doc.data().totalAmount || 0), 0);
-        
-        setStats({
-          revenue: totalRevenue,
-          orders: ordersCountSnap.data().count,
-          products: productsCountSnap.data().count,
-          users: usersCountSnap.data().count
-        });
-
-        const recentQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(5));
-        const recentSnap = await getDocs(recentQuery);
-        setRecentOrders(recentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-      } catch (err: any) {
-        console.error("Error fetching admin stats:", err);
-        if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
-          try {
-            handleFirestoreError(err, OperationType.GET, "admin_stats");
-          } catch (quotaErr: any) {
-            setError(quotaErr);
-          }
-        }
-      } finally {
+    setLoading(true);
+    
+    // Real-time Orders
+    const unsubscribeOrders = onSnapshot(
+      query(collection(db, "orders"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const orderData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+        setOrders(orderData);
         setLoading(false);
+      },
+      (err) => {
+        console.error("Orders snapshot error:", err);
+        handleFirestoreError(err, OperationType.LIST, "orders");
       }
+    );
+
+    // Real-time Products
+    const unsubscribeProducts = onSnapshot(
+      collection(db, "products"),
+      (snapshot) => {
+        setProductsCount(snapshot.size);
+        setAllProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }
+    );
+
+    // Real-time Users
+    const unsubscribeUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        setUsersCount(snapshot.size);
+        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }
+    );
+
+    return () => {
+      unsubscribeOrders();
+      unsubscribeProducts();
+      unsubscribeUsers();
     };
-    fetchStats();
   }, []);
 
-  const downloadReport = async () => {
+  const stats = useMemo(() => {
+    const now = new Date();
+    const currentMonthStart = startOfMonth(now);
+    const currentMonthEnd = endOfMonth(now);
+    const lastMonthStart = startOfMonth(subMonths(now, 1));
+    const lastMonthEnd = endOfMonth(subMonths(now, 1));
+
+    const calculateGrowth = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return ((current - previous) / previous) * 100;
+    };
+
+    // Revenue Stats
+    const currentMonthRevenue = orders
+      .filter(o => isWithinInterval(new Date(o.createdAt), { start: currentMonthStart, end: currentMonthEnd }))
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    
+    const lastMonthRevenue = orders
+      .filter(o => isWithinInterval(new Date(o.createdAt), { start: lastMonthStart, end: lastMonthEnd }))
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+    const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+    // Order Stats
+    const currentMonthOrders = orders.filter(o => isWithinInterval(new Date(o.createdAt), { start: currentMonthStart, end: currentMonthEnd })).length;
+    const lastMonthOrders = orders.filter(o => isWithinInterval(new Date(o.createdAt), { start: lastMonthStart, end: lastMonthEnd })).length;
+
+    // Product Stats
+    const currentMonthProducts = allProducts.filter(p => p.createdAt && isWithinInterval(new Date(p.createdAt), { start: currentMonthStart, end: currentMonthEnd })).length;
+    const lastMonthProducts = allProducts.filter(p => p.createdAt && isWithinInterval(new Date(p.createdAt), { start: lastMonthStart, end: lastMonthEnd })).length;
+
+    // User Stats
+    const currentMonthUsers = allUsers.filter(u => u.createdAt && isWithinInterval(new Date(u.createdAt), { start: currentMonthStart, end: currentMonthEnd })).length;
+    const lastMonthUsers = allUsers.filter(u => u.createdAt && isWithinInterval(new Date(u.createdAt), { start: lastMonthStart, end: lastMonthEnd })).length;
+
+    return {
+      revenue: {
+        total: totalRevenue,
+        growth: calculateGrowth(currentMonthRevenue, lastMonthRevenue)
+      },
+      orders: {
+        total: orders.length,
+        growth: calculateGrowth(currentMonthOrders, lastMonthOrders)
+      },
+      products: {
+        total: productsCount,
+        growth: calculateGrowth(currentMonthProducts, lastMonthProducts)
+      },
+      users: {
+        total: usersCount,
+        growth: calculateGrowth(currentMonthUsers, lastMonthUsers)
+      }
+    };
+  }, [orders, allProducts, allUsers, productsCount, usersCount]);
+
+  const chartData = useMemo(() => {
+    const last7Days = eachDayOfInterval({
+      start: subDays(new Date(), 6),
+      end: new Date()
+    });
+
+    return last7Days.map(day => {
+      const dayOrders = orders.filter(o => isSameDay(new Date(o.createdAt), day));
+      const revenue = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+      return {
+        name: format(day, "EEE"),
+        revenue: revenue,
+        orders: dayOrders.length
+      };
+    });
+  }, [orders]);
+
+  const downloadReport = () => {
     try {
-      const ordersSnap = await getDocs(collection(db, "orders"));
-      const orders = ordersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       const headers = ["Order ID", "Customer", "Amount", "Status", "Date"];
       const rows = orders.map((o: any) => [
         o.id,
@@ -101,10 +191,10 @@ export default function AdminDashboard() {
   };
 
   const statCards = [
-    { label: "Total Revenue", value: formatCurrency(stats.revenue), icon: TrendingUp, color: "text-green-500", trend: "+12.5%", isUp: true },
-    { label: "Total Orders", value: stats.orders, icon: ShoppingCart, color: "text-blue-500", trend: "+8.2%", isUp: true },
-    { label: "Total Products", value: stats.products, icon: Package, color: "text-purple-500", trend: "+2.4%", isUp: true },
-    { label: "Total Users", value: stats.users, icon: Users, color: "text-orange-500", trend: "-1.5%", isUp: false },
+    { label: "Total Revenue", value: formatCurrency(stats.revenue.total), icon: TrendingUp, color: "text-green-500", trend: stats.revenue.growth.toFixed(1) + "%", isUp: stats.revenue.growth >= 0 },
+    { label: "Total Orders", value: stats.orders.total, icon: ShoppingCart, color: "text-blue-500", trend: stats.orders.growth.toFixed(1) + "%", isUp: stats.orders.growth >= 0 },
+    { label: "Total Products", value: stats.products.total, icon: Package, color: "text-purple-500", trend: stats.products.growth.toFixed(1) + "%", isUp: stats.products.growth >= 0 },
+    { label: "Total Users", value: stats.users.total, icon: Users, color: "text-orange-500", trend: stats.users.growth.toFixed(1) + "%", isUp: stats.users.growth >= 0 },
   ];
 
   if (loading) {
@@ -174,7 +264,7 @@ export default function AdminDashboard() {
                   <Icon size={24} />
                 </div>
                 <div className={`flex items-center text-[10px] font-black uppercase tracking-widest ${stat.isUp ? 'text-green-500' : 'text-red-500'}`}>
-                  {stat.trend} {stat.isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                  {stat.isUp ? '+' : ''}{stat.trend} {stat.isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                 </div>
               </div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">{stat.label}</p>
@@ -182,6 +272,96 @@ export default function AdminDashboard() {
             </motion.div>
           );
         })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Revenue Chart */}
+        <div className="lg:col-span-2 bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-2xl font-black tracking-tighter uppercase">Revenue Performance</h3>
+            <div className="flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+              <Calendar size={14} />
+              <span>Last 7 Days</span>
+            </div>
+          </div>
+          
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fontWeight: 900, fill: '#999' }}
+                  dy={10}
+                />
+                <YAxis 
+                  hide 
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '20px', 
+                    border: 'none', 
+                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                    padding: '15px'
+                  }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' }}
+                  labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#999', marginBottom: '5px' }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="revenue" 
+                  stroke="#10b981" 
+                  strokeWidth={4}
+                  fillOpacity={1} 
+                  fill="url(#colorRevenue)" 
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Order Volume Chart */}
+        <div className="lg:col-span-1 bg-black dark:bg-white text-white dark:text-black p-10 rounded-[3rem] shadow-2xl shadow-black/20">
+          <h3 className="text-2xl font-black tracking-tighter uppercase mb-8">Order Volume</h3>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fontWeight: 900, fill: '#666' }}
+                  dy={10}
+                />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(255,255,255,0.1)' }}
+                  contentStyle={{ 
+                    borderRadius: '20px', 
+                    border: 'none', 
+                    backgroundColor: '#111',
+                    color: '#fff',
+                    padding: '15px'
+                  }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', color: '#fff' }}
+                  labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#666', marginBottom: '5px' }}
+                />
+                <Bar dataKey="orders" radius={[10, 10, 10, 10]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index === chartData.length - 1 ? '#fff' : '#333'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -198,7 +378,7 @@ export default function AdminDashboard() {
           </div>
           
           <div className="space-y-4">
-            {recentOrders.map(order => (
+            {orders.slice(0, 5).map(order => (
               <div key={order.id} className="flex items-center justify-between p-6 bg-gray-50 dark:bg-gray-900 rounded-3xl">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-black dark:bg-white text-white dark:text-black rounded-full flex items-center justify-center font-black text-xs uppercase tracking-tighter">
@@ -223,43 +403,34 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="lg:col-span-1 bg-black dark:bg-white text-white dark:text-black p-10 rounded-[3rem] shadow-2xl shadow-black/20">
+        <div className="lg:col-span-1 bg-gray-50 dark:bg-gray-900 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-800">
           <h3 className="text-2xl font-black tracking-tighter uppercase mb-8">Quick Actions</h3>
           <div className="space-y-4">
             <button 
               onClick={() => navigate("/admin/products")}
-              className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
+              className="w-full p-6 bg-white dark:bg-gray-950 rounded-3xl text-left border border-gray-100 dark:border-gray-800 hover:scale-[1.02] transition-all group shadow-sm"
             >
-              <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">Inventory</p>
+              <p className="text-xs font-black uppercase tracking-widest mb-1 text-gray-400">Inventory</p>
               <p className="text-lg font-black uppercase tracking-tight flex items-center">
                 Add New Product <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
               </p>
             </button>
             <button 
-              onClick={() => toast.success("Coupon system coming soon!")}
-              className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
+              onClick={() => navigate("/admin/coupons")}
+              className="w-full p-6 bg-white dark:bg-gray-950 rounded-3xl text-left border border-gray-100 dark:border-gray-800 hover:scale-[1.02] transition-all group shadow-sm"
             >
-              <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">Marketing</p>
+              <p className="text-xs font-black uppercase tracking-widest mb-1 text-gray-400">Marketing</p>
               <p className="text-lg font-black uppercase tracking-tight flex items-center">
-                Create Coupon <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
+                Manage Coupons <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
               </p>
             </button>
             <button 
               onClick={() => navigate("/admin/users")}
-              className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
+              className="w-full p-6 bg-white dark:bg-gray-950 rounded-3xl text-left border border-gray-100 dark:border-gray-800 hover:scale-[1.02] transition-all group shadow-sm"
             >
-              <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">Access Control</p>
+              <p className="text-xs font-black uppercase tracking-widest mb-1 text-gray-400">Access Control</p>
               <p className="text-lg font-black uppercase tracking-tight flex items-center">
                 Manage Users <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
-              </p>
-            </button>
-            <button 
-              onClick={() => navigate("/admin/settings")}
-              className="w-full p-6 bg-white/10 dark:bg-black/10 rounded-3xl text-left hover:bg-white/20 dark:hover:bg-black/20 transition-all group"
-            >
-              <p className="text-xs font-black uppercase tracking-widest mb-1 opacity-60">System</p>
-              <p className="text-lg font-black uppercase tracking-tight flex items-center">
-                System Settings <ArrowUpRight className="ml-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" size={20} />
               </p>
             </button>
           </div>

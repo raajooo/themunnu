@@ -11,6 +11,7 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import axios from "axios";
 import nodemailer from "nodemailer";
+import cors from "cors";
 
 const require = createRequire(import.meta.url);
 const firebaseConfig = require("./firebase-applet-config.json");
@@ -75,7 +76,9 @@ const transporter = nodemailer.createTransport({
 });
 
 const app = express();
-app.use(express.json());
+app.use(cors());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // API Routes
 app.get("/api/health", (req, res) => {
@@ -142,6 +145,8 @@ app.post("/api/admin/send-coupon-reminders", async (req, res) => {
 // 2. Send Newsletter
 app.post("/api/admin/send-newsletter", async (req, res) => {
   const { subject, message, products, subscribers } = req.body;
+
+  console.log(`Newsletter request received: "${subject}" for ${subscribers?.length || 0} subscribers`);
 
   if (!subscribers || subscribers.length === 0) {
     return res.status(400).json({ error: "No subscribers provided" });
@@ -554,7 +559,7 @@ app.post("/api/shipping/create-shipment", async (req, res) => {
         total_amount: order?.totalAmount,
         products_desc: order?.items?.map((item: any) => item.name).join(", "),
         hsn_code: "",
-        quantity: order?.items?.reduce((acc: number, item: any) => acc + item.quantity, 0)
+        quantity: order?.items?.reduce((acc: number, item: any) => acc + item.quantity, 0).toString()
       }],
       pickup_location: {
         name: "Main Warehouse",
@@ -565,14 +570,14 @@ app.post("/api/shipping/create-shipment", async (req, res) => {
       }
     };
 
-    const response = await axios.post('https://track.delhivery.com/api/cne/json/', `format=json&data=${JSON.stringify(payload)}`, {
+    const response = await axios.post('https://track.delhivery.com/api/cmu/create.json', `format=json&data=${JSON.stringify(payload)}`, {
       headers: {
         'Authorization': `Token ${apiKey}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
 
-    if (response.data.success) {
+    if (response.data.success || response.data.packages?.length > 0) {
       const trackingId = response.data.packages[0].waybill;
       await firestore.collection("orders").doc(orderId).update({
         trackingId,

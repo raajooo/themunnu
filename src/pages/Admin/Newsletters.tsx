@@ -98,7 +98,15 @@ export default function AdminNewsletters() {
         })
       });
 
-      const data = await response.json();
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `Server error: ${response.status}`);
+      }
+
       if (!response.ok) throw new Error(data.error || "Failed to send newsletter");
 
       toast.success("Newsletter sent successfully!", { id: toastId });
@@ -107,7 +115,10 @@ export default function AdminNewsletters() {
       setSelectedProducts([]);
     } catch (error: any) {
       console.error("Newsletter error:", error);
-      toast.error(error.message || "Failed to send newsletter", { id: toastId });
+      const errorMessage = error.name === 'TypeError' && error.message === 'Failed to fetch' 
+        ? "Network error: Could not reach the server. The newsletter might be too large or the server is restarting."
+        : error.message || "Failed to send newsletter";
+      toast.error(errorMessage, { id: toastId });
     } finally {
       setSending(false);
     }
