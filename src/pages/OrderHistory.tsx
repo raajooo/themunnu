@@ -62,10 +62,14 @@ export default function OrderHistory({ user }: OrderHistoryProps) {
         setOrders(fetchedOrders);
         
         // Update cache
-        localStorage.setItem(`${CACHE_KEY}_${user.uid}`, JSON.stringify({
-          data: fetchedOrders,
-          timestamp: Date.now()
-        }));
+        try {
+          localStorage.setItem(`${CACHE_KEY}_${user.uid}`, JSON.stringify({
+            data: fetchedOrders,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn("Storage quota exceeded, skipping cache update.");
+        }
       } catch (err: any) {
         if (err.message?.includes('resource-exhausted') || err.message?.includes('Quota limit exceeded')) {
           try {
