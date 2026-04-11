@@ -231,7 +231,7 @@ export default function Cart() {
             </div>
 
             {/* Coupon Input */}
-            {settings?.isCouponSystemEnabled && (
+            {settings?.isCouponSystemEnabled !== false && (
               <div className="mb-8">
                 {!appliedCoupon ? (
                   <form onSubmit={handleApplyCoupon}>

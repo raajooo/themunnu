@@ -694,9 +694,12 @@ export default function AdminOrders() {
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
                 {sortedOrders.length > 0 ? (
-                  sortedOrders.map(order => (
-                    <tr 
+                  sortedOrders.map((order, idx) => (
+                    <motion.tr 
                       key={order.id} 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
                       onClick={() => setSelectedOrder(order)}
                       className={`cursor-pointer transition-colors ${selectedOrder?.id === order.id ? 'bg-gray-50 dark:bg-gray-900' : 'hover:bg-gray-50/50 dark:hover:bg-gray-900/50'} ${selectedOrders.includes(order.id) ? 'bg-gray-50 dark:bg-gray-900' : ''}`}
                     >
@@ -766,7 +769,7 @@ export default function AdminOrders() {
                           <Printer size={18} />
                         </button>
                       </td>
-                    </tr>
+                    </motion.tr>
                   ))
                 ) : (
                   <tr>
@@ -833,6 +836,19 @@ export default function AdminOrders() {
                 </div>
 
                 <div className="pt-8 border-t border-gray-50 dark:border-gray-900 space-y-4">
+                  {selectedOrder.couponCode && (
+                    <div className="p-4 bg-pink-50 dark:bg-pink-900/20 rounded-2xl border border-pink-100 dark:border-pink-900/30">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-pink-500">Coupon Applied</span>
+                        <span className="px-2 py-1 bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-400 rounded text-[10px] font-black uppercase tracking-widest">{selectedOrder.couponCode}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-gray-600 dark:text-gray-400">Discount Amount</span>
+                        <span className="text-sm font-black text-green-500">-{formatCurrency(selectedOrder.discountAmount || 0)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
                     <span>Payment Method</span>
                     <span className="text-black dark:text-white">{selectedOrder.paymentMethod.toUpperCase()}</span>
@@ -841,6 +857,16 @@ export default function AdminOrders() {
                     <span>Payment Status</span>
                     <span className="text-black dark:text-white">{selectedOrder.paymentStatus.toUpperCase()}</span>
                   </div>
+                  
+                  <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      {selectedOrder.paymentMethod === 'cod' ? 'To Collect (COD)' : 'Amount Paid'}
+                    </span>
+                    <span className="text-lg font-black text-black dark:text-white">
+                      {formatCurrency(selectedOrder.totalAmount)}
+                    </span>
+                  </div>
+
                   {selectedOrder.deliveryEstimate && (
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
                       <span>Est. Delivery</span>

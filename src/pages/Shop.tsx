@@ -39,6 +39,8 @@ export default function Shop() {
   const [debouncedSearch, setDebouncedSearch] = useState(queryParam);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 50000]);
   const [selectedBrand, setSelectedBrand] = useState<string>("All");
+  const [sortOrder, setSortOrder] = useState<"none" | "asc" | "desc">("none");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [hasActiveCoupons, setHasActiveCoupons] = useState(false);
 
@@ -72,8 +74,6 @@ export default function Shop() {
 
     const fetchCoupons = async () => {
       try {
-        // We only check if there's at least one active coupon to show the banner
-        // Using a limited query to check existence without needing full list permissions
         const q = query(collection(db, "coupons"), where("isActive", "==", true), limit(1));
         const snap = await getDocs(q);
         setHasActiveCoupons(!snap.empty);
@@ -94,18 +94,17 @@ export default function Shop() {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        // Check if we already have valid cache to skip loading state
         const cacheKey = `shop_products_${categoryParam || 'all'}`;
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
           const { timestamp } = JSON.parse(cached);
           if (Date.now() - timestamp < 30 * 60 * 1000) {
             setLoading(false);
-            return;
+            // We still need to apply client-side filters/sort if we use cached data
+            // but for simplicity, let's just re-fetch for now or handle client-side
           }
         }
 
-        // Only show loading if we don't have products yet
         if (products.length === 0) {
           setLoading(true);
         }
@@ -126,7 +125,6 @@ export default function Shop() {
         const snap = await getDocs(q);
         let results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
 
-        // Client-side filtering for search, price, and brand
         if (searchQuery) {
           results = results.filter(p => 
             p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -140,20 +138,22 @@ export default function Shop() {
 
         results = results.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
 
+        if (sortOrder === "asc") {
+          results.sort((a, b) => a.price - b.price);
+        } else if (sortOrder === "desc") {
+          results.sort((a, b) => b.price - a.price);
+        }
+
         setProducts(results);
         
-        // Update cache with error handling for quota
         try {
           localStorage.setItem(cacheKey, JSON.stringify({
             data: results,
             timestamp: Date.now()
           }));
-
-          // Also save to session storage
           sessionStorage.setItem(`shop_products_session_${categoryParam || 'all'}`, JSON.stringify(results));
         } catch (storageErr) {
           console.warn("Storage quota exceeded, clearing old cache...");
-          // Clear old shop caches to make room
           Object.keys(localStorage).forEach(key => {
             if (key.startsWith('shop_products_')) localStorage.removeItem(key);
           });
@@ -176,7 +176,7 @@ export default function Shop() {
     };
 
     fetchProducts();
-  }, [categoryParam, debouncedSearch, selectedBrand, priceRange]);
+  }, [categoryParam, debouncedSearch, selectedBrand, priceRange, sortOrder]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -205,7 +205,19 @@ export default function Shop() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <button className="flex items-center space-x-2 px-6 py-3 bg-black dark:bg-white text-white dark:text-black rounded-full font-bold text-sm uppercase tracking-widest">
+          <select 
+            className="px-6 py-3 bg-gray-100 dark:bg-gray-900 rounded-full font-bold text-sm uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as "none" | "asc" | "desc")}
+          >
+            <option value="none">Sort by Price</option>
+            <option value="asc">Low to High</option>
+            <option value="desc">High to Low</option>
+          </select>
+          <button 
+            onClick={() => setIsFilterOpen(!isFilterOpen)}
+            className="flex items-center space-x-2 px-6 py-3 bg-black dark:bg-white text-white dark:text-black rounded-full font-bold text-sm uppercase tracking-widest"
+          >
             <SlidersHorizontal size={18} />
             <span>Filters</span>
           </button>
@@ -213,8 +225,8 @@ export default function Shop() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-        {/* Sidebar Filters - Desktop */}
-        <aside className="hidden lg:block space-y-10">
+        {/* Sidebar Filters */}
+        <aside className={`${isFilterOpen ? 'block' : 'hidden'} lg:block space-y-10`}>
           <div>
             <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-6">Categories</h3>
             <div className="space-y-3">
@@ -255,7 +267,7 @@ export default function Shop() {
                 <button 
                   key={brand}
                   onClick={() => setSelectedBrand(brand)}
-                  className={`block text-sm font-medium transition-colors ${selectedBrand === brand ? 'text-black dark:text-white font-bold underline underline-offset-8' : 'text-gray-500 hover:text-black dark:hover:text-white'}`}
+                  className={`block text-sm font-medium transition-all duration-200 hover:scale-105 hover:text-black dark:hover:text-white ${selectedBrand === brand ? 'text-black dark:text-white font-bold underline underline-offset-8' : 'text-gray-500'}`}
                 >
                   {brand}
                 </button>

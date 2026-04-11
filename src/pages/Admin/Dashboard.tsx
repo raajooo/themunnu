@@ -276,7 +276,12 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Revenue Chart */}
-        <div className="lg:col-span-2 bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4 }}
+          className="lg:col-span-2 bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5"
+        >
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-2xl font-black tracking-tighter uppercase">Revenue Performance</h3>
             <div className="flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -326,10 +331,15 @@ export default function AdminDashboard() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </motion.div>
 
         {/* Order Volume Chart */}
-        <div className="lg:col-span-1 bg-black dark:bg-white text-white dark:text-black p-10 rounded-[3rem] shadow-2xl shadow-black/20">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.5 }}
+          className="lg:col-span-1 bg-black dark:bg-white text-white dark:text-black p-10 rounded-[3rem] shadow-2xl shadow-black/20"
+        >
           <h3 className="text-2xl font-black tracking-tighter uppercase mb-8">Order Volume</h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -361,12 +371,17 @@ export default function AdminDashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </motion.div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Recent Orders */}
-        <div className="lg:col-span-2 bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="lg:col-span-2 bg-white dark:bg-gray-950 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-900 shadow-xl shadow-black/5"
+        >
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-2xl font-black tracking-tighter uppercase">Recent Orders</h3>
             <button 
@@ -378,8 +393,15 @@ export default function AdminDashboard() {
           </div>
           
           <div className="space-y-4">
-            {orders.slice(0, 5).map(order => (
-              <div key={order.id} className="flex items-center justify-between p-6 bg-gray-50 dark:bg-gray-900 rounded-3xl">
+            {orders.slice(0, 5).map((order, idx) => (
+              <motion.div 
+                key={order.id} 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.7 + (idx * 0.1) }}
+                className="flex items-center justify-between p-6 bg-gray-50 dark:bg-gray-900 rounded-3xl hover:scale-[1.01] transition-transform cursor-pointer"
+                onClick={() => navigate("/admin/orders")}
+              >
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-black dark:bg-white text-white dark:text-black rounded-full flex items-center justify-center font-black text-xs uppercase tracking-tighter">
                     {order.address.name.slice(0, 2)}
@@ -397,13 +419,18 @@ export default function AdminDashboard() {
                     {order.orderStatus}
                   </span>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
         {/* Quick Actions */}
-        <div className="lg:col-span-1 bg-gray-50 dark:bg-gray-900 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-800">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="lg:col-span-1 bg-gray-50 dark:bg-gray-900 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-800"
+        >
           <h3 className="text-2xl font-black tracking-tighter uppercase mb-8">Quick Actions</h3>
           <div className="space-y-4">
             <button 
@@ -434,7 +461,7 @@ export default function AdminDashboard() {
               </p>
             </button>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

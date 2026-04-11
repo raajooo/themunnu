@@ -459,6 +459,10 @@ app.post("/api/auth/reset-password", async (req, res) => {
 app.post("/api/payment/create-razorpay-order", async (req, res) => {
   const { amount, currency = "INR", receipt } = req.body;
   
+  if (amount === undefined || amount === null || isNaN(amount) || amount < 1) {
+    return res.status(400).json({ error: "Invalid amount. Minimum amount is ₹1" });
+  }
+
   try {
     const options = {
       amount: Math.round(amount * 100), // Razorpay expects amount in paise
@@ -469,8 +473,11 @@ app.post("/api/payment/create-razorpay-order", async (req, res) => {
     const order = await razorpay.orders.create(options);
     res.json({ success: true, order });
   } catch (error: any) {
-    console.error("Razorpay Order Error:", error);
-    res.status(500).json({ error: "Failed to create payment order", details: error.message });
+    console.error("Razorpay Order Error:", JSON.stringify(error, null, 2));
+    res.status(500).json({ 
+      error: "Failed to create payment order", 
+      details: error.error?.description || error.message || "Unknown error" 
+    });
   }
 });
 
