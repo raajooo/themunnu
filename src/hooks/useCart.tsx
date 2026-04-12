@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, createContext, useContext, useMemo, useCallback } from "react";
 import { OrderItem, Product } from "../types";
 import { toast } from "react-hot-toast";
 
@@ -16,26 +16,52 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<OrderItem[]>(() => {
-    const saved = localStorage.getItem("munnu_cart");
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem("munnu_cart");
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Failed to load cart from localStorage:", e);
+      return [];
+    }
   });
 
   useEffect(() => {
-    localStorage.setItem("munnu_cart", JSON.stringify(items));
+    try {
+      // Limit the data stored to prevent quota issues
+      // We only store essential info if possible, but for now we'll just try-catch
+      localStorage.setItem("munnu_cart", JSON.stringify(items));
+    } catch (e) {
+      console.error("Failed to save cart to localStorage:", e);
+      if (e instanceof Error && (
+        e.name === 'QuotaExceededError' || 
+        e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        e.message.includes('quota')
+      )) {
+        toast.error("Cart storage is full. Try removing some items.");
+      }
+    }
   }, [items]);
 
-  const addToCart = (product: Product, size: string, quantity: number) => {
+  const addToCart = useCallback((product: Product, size: string, quantity: number) => {
+    let success = true;
     setItems(prev => {
       const existing = prev.find(i => i.productId === product.id && i.size === size);
       if (existing) {
-        toast.success(`Updated ${product.name} quantity`);
         return prev.map(i => 
           (i.productId === product.id && i.size === size) 
             ? { ...i, quantity: i.quantity + quantity } 
             : i
         );
       }
-      toast.success(`Added ${product.name} to cart`);
+      
+      // Limit cart size to 50 unique items to prevent storage issues
+      if (prev.length >= 50) {
+        success = false;
+        return prev;
+      }
+
       return [...prev, {
         productId: product.id,
         name: product.name,
@@ -45,32 +71,52 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         image: product.images?.[0] || "https://picsum.photos/seed/sneaker/400/400"
       }];
     });
-  };
+    
+    if (success) {
+      toast.success(`Added ${product.name} to cart`);
+    } else {
+      toast.error("Cart is full (max 50 unique items)");
+    }
+  }, []);
 
-  const removeFromCart = (productId: string, size: string) => {
+  const removeFromCart = useCallback((productId: string, size: string) => {
     setItems(prev => prev.filter(i => !(i.productId === productId && i.size === size)));
     toast.error("Removed from cart");
-  };
+  }, []);
 
-  const updateQuantity = (productId: string, size: string, quantity: number) => {
+  const updateQuantity = useCallback((productId: string, size: string, quantity: number) => {
     if (quantity < 1) return;
     setItems(prev => prev.map(i => 
       (i.productId === productId && i.size === size) 
         ? { ...i, quantity } 
         : i
     ));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setItems([]);
-    localStorage.removeItem("munnu_cart");
-  };
+    try {
+      localStorage.removeItem("munnu_cart");
+    } catch (e) {
+      console.error("Failed to clear cart from localStorage:", e);
+    }
+  }, []);
 
-  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
-  const totalPrice = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+  const totalItems = useMemo(() => items.reduce((sum, i) => sum + i.quantity, 0), [items]);
+  const totalPrice = useMemo(() => items.reduce((sum, i) => sum + (i.price * i.quantity), 0), [items]);
+
+  const contextValue = useMemo(() => ({
+    items,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    totalItems,
+    totalPrice
+  }), [items, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice]);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice }}>
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   );

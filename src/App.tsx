@@ -34,6 +34,7 @@ const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
 const AdminUsers = lazy(() => import("./pages/Admin/Users"));
 const AdminBanners = lazy(() => import("./pages/Admin/Banners"));
 const AdminNewsletters = lazy(() => import("./pages/Admin/Newsletters"));
+const AdminReviews = lazy(() => import("./pages/Admin/Reviews"));
 
 // Components
 import Layout from "./components/Layout";
@@ -183,6 +184,7 @@ export default function App() {
               <Route path="users" element={<AdminUsers />} />
               <Route path="banners" element={<AdminBanners />} />
               <Route path="newsletters" element={<AdminNewsletters />} />
+              <Route path="reviews" element={<AdminReviews />} />
               <Route path="settings" element={<AdminSettings />} />
             </Route>
           </Routes>

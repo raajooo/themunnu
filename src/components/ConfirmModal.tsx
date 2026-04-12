@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, AlertTriangle, Loader2 } from "lucide-react";
+import { X, AlertTriangle, Loader2, CheckCircle2, LucideIcon } from "lucide-react";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ interface ConfirmModalProps {
   cancelText?: string;
   isDestructive?: boolean;
   isLoading?: boolean;
+  icon?: LucideIcon;
 }
 
 export default function ConfirmModal({
@@ -23,8 +24,10 @@ export default function ConfirmModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   isDestructive = true,
-  isLoading = false
+  isLoading = false,
+  icon: CustomIcon
 }: ConfirmModalProps) {
+  const Icon = CustomIcon || (isDestructive ? AlertTriangle : CheckCircle2);
   return (
     <AnimatePresence>
       {isOpen && (
@@ -37,8 +40,8 @@ export default function ConfirmModal({
           >
             <div className="p-8">
               <div className="flex items-center space-x-4 mb-6">
-                <div className={`p-3 rounded-2xl ${isDestructive ? 'bg-red-50 dark:bg-red-900/20 text-red-500' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-500'}`}>
-                  <AlertTriangle size={24} />
+                <div className={`p-3 rounded-2xl ${isDestructive ? 'bg-red-50 dark:bg-red-900/20 text-red-500' : 'bg-green-50 dark:bg-green-900/20 text-green-500'}`}>
+                  <Icon size={24} />
                 </div>
                 <h2 className="text-2xl font-black tracking-tighter uppercase">{title}</h2>
               </div>

@@ -75,6 +75,126 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Email Templates
+const emailTemplates = {
+  orderConfirmation: (order: any) => ({
+    subject: `Order Confirmed! #${order.id}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h1 style="text-align: center; color: #000;">MUNNU</h1>
+        <h2 style="text-align: center; color: #222;">Order Confirmation</h2>
+        <p>Hi ${order.address.name},</p>
+        <p>Thank you for shopping with Munnu! Your order <strong>#${order.id}</strong> has been placed successfully.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 10px;">
+          <h3 style="margin-top: 0;">Order Summary</h3>
+          ${order.items.map((item: any) => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>${item.name} (Size: ${item.size}) x ${item.quantity}</span>
+              <span>₹${item.price * item.quantity}</span>
+            </div>
+          `).join('')}
+          <hr style="border: 0; border-top: 1px solid #ddd;">
+          <div style="display: flex; justify-content: space-between; font-weight: bold;">
+            <span>Total Amount</span>
+            <span>₹${order.totalAmount}</span>
+          </div>
+        </div>
+
+        <div style="margin: 20px 0;">
+          <h3>Shipping Address</h3>
+          <p>${order.address.address}<br>${order.address.city}, ${order.address.state} - ${order.address.pincode}</p>
+        </div>
+
+        <p style="text-align: center; color: #666; font-size: 14px;">We'll notify you once your order is shipped!</p>
+      </div>
+    `
+  }),
+  shipmentDispatch: (order: any, trackingId: string) => ({
+    subject: `Your Order #${order.id} is on its way!`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h1 style="text-align: center; color: #000;">MUNNU</h1>
+        <h2 style="text-align: center; color: #222;">Order Shipped</h2>
+        <p>Hi ${order.address.name},</p>
+        <p>Great news! Your order <strong>#${order.id}</strong> has been dispatched.</p>
+        
+        <div style="margin: 20px 0; padding: 20px; background: #e8f5e9; border-radius: 10px; text-align: center;">
+          <h3 style="margin-top: 0; color: #2e7d32;">Tracking Details</h3>
+          <p style="font-size: 18px; font-weight: bold; margin: 10px 0;">Waybill: ${trackingId}</p>
+          <p>Carrier: Delhivery</p>
+          <a href="https://munnu.in/track/${order.id}" style="display: inline-block; padding: 10px 20px; background: #000; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">Track Order</a>
+        </div>
+
+        <p style="text-align: center; color: #666; font-size: 14px;">Expected delivery: ${order.deliveryEstimate || '5-7 business days'}</p>
+      </div>
+    `
+  }),
+  otpVerificationSuccess: (email: string) => ({
+    subject: "Verification Successful - Welcome to Munnu",
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; text-align: center;">
+        <h1 style="color: #000;">MUNNU</h1>
+        <div style="color: #4caf50; font-size: 48px; margin: 20px 0;">✓</div>
+        <h2>Verification Successful!</h2>
+        <p>Your email <strong>${email}</strong> has been successfully verified.</p>
+        <p>You can now explore our latest sneaker collections and enjoy exclusive offers.</p>
+        <a href="https://munnu.in/shop" style="display: inline-block; padding: 12px 25px; background: #000; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 20px;">Start Shopping</a>
+      </div>
+    `
+  }),
+  adminNewOrder: (order: any) => ({
+    subject: `New Order Received! #${order.id}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #d32f2f;">New Order Alert</h2>
+        <p>A new order has been placed on Munnu.</p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px;">
+          <p><strong>Order ID:</strong> ${order.id}</p>
+          <p><strong>Customer:</strong> ${order.address.name}</p>
+          <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
+          <p><strong>Payment Method:</strong> ${order.paymentMethod.toUpperCase()}</p>
+        </div>
+        <a href="https://munnu.in/admin/orders" style="display: inline-block; padding: 10px 20px; background: #000; color: #fff; text-decoration: none; border-radius: 5px; margin-top: 15px;">View in Admin Panel</a>
+      </div>
+    `
+  }),
+  lowStockAlert: (product: any, size: string, stock: number) => ({
+    subject: `Low Stock Alert: ${product.name}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #f57c00;">Low Stock Alert</h2>
+        <p>The following product is running low on stock:</p>
+        <div style="background: #fff3e0; padding: 15px; border-radius: 5px; border-left: 5px solid #f57c00;">
+          <p><strong>Product:</strong> ${product.name}</p>
+          <p><strong>Size:</strong> ${size}</p>
+          <p><strong>Remaining Stock:</strong> <span style="color: #d32f2f; font-weight: bold;">${stock}</span></p>
+        </div>
+        <p>Please restock soon to avoid missing out on sales.</p>
+        <a href="https://munnu.in/admin/products" style="display: inline-block; padding: 10px 20px; background: #000; color: #fff; text-decoration: none; border-radius: 5px; margin-top: 15px;">Manage Inventory</a>
+      </div>
+    `
+  })
+};
+
+async function sendEmail(to: string, template: { subject: string, html: string }) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log(`[MOCK EMAIL] To: ${to} | Subject: ${template.subject}`);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: `"Munnu Store" <${process.env.SMTP_USER}>`,
+      to,
+      ...template
+    });
+    console.log(`Email sent to ${to}: ${template.subject}`);
+  } catch (error) {
+    console.error(`Failed to send email to ${to}:`, error);
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
@@ -83,6 +203,54 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 // API Routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Munnu API is running" });
+});
+
+// --- ORDER ROUTES ---
+
+// 1. Create Order and Send Notifications
+app.post("/api/orders/create", async (req, res) => {
+  const { orderData } = req.body;
+  if (!orderData) return res.status(400).json({ error: "Order data is required" });
+
+  try {
+    // 1. Save order to Firestore
+    const orderRef = await firestore.collection("orders").add({
+      ...orderData,
+      createdAt: new Date().toISOString()
+    });
+    const orderId = orderRef.id;
+    const fullOrder = { id: orderId, ...orderData };
+
+    // 2. Send Confirmation Email to User
+    if (orderData.address?.email || orderData.userEmail) {
+      const userEmail = orderData.address?.email || orderData.userEmail;
+      await sendEmail(userEmail, emailTemplates.orderConfirmation(fullOrder));
+    }
+
+    // 3. Send Notification Email to Admin
+    const adminEmail = "raajooothakur0@gmail.com";
+    await sendEmail(adminEmail, emailTemplates.adminNewOrder(fullOrder));
+
+    // 4. Check for Low Stock and Send Alerts
+    for (const item of orderData.items) {
+      const productDoc = await firestore.collection("products").doc(item.productId).get();
+      if (productDoc.exists) {
+        const product = productDoc.data();
+        const sizeStock = product?.sizes?.find((s: any) => s.size === item.size);
+        
+        // Assuming stock is updated elsewhere, but we check the current level
+        // In a real app, you'd decrement stock here atomically
+        if (sizeStock && sizeStock.stock <= 5) {
+          await sendEmail(adminEmail, emailTemplates.lowStockAlert(product, item.size, sizeStock.stock));
+        }
+      }
+    }
+
+    res.json({ success: true, orderId });
+  } catch (error: any) {
+    console.error("Order Creation Error:", error);
+    res.status(500).json({ error: "Failed to create order", details: error.message });
+  }
 });
 
 // --- ADMIN ROUTES ---
@@ -352,6 +520,10 @@ app.post("/api/auth/register", async (req, res) => {
 
     await firestore.collection("users").doc(phoneNumber).set(userDoc);
     const customToken = await auth.createCustomToken(phoneNumber);
+
+    // Send Verification Success Email
+    await sendEmail(email.toLowerCase(), emailTemplates.otpVerificationSuccess(email.toLowerCase()));
+
     res.json({ success: true, customToken });
   } catch (error: any) {
     console.error("Registration Error:", error);
@@ -446,6 +618,12 @@ app.post("/api/auth/reset-password", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await firestore.collection("users").doc(phoneNumber).update({ password: hashedPassword });
+    
+    // Send Verification Success Email
+    if (decoded.email) {
+      await sendEmail(decoded.email.toLowerCase(), emailTemplates.otpVerificationSuccess(decoded.email.toLowerCase()));
+    }
+
     res.json({ success: true, message: "Password reset successfully" });
   } catch (error) {
     console.error("Reset Password Error:", error);
@@ -590,6 +768,13 @@ app.post("/api/shipping/create-shipment", async (req, res) => {
         trackingId,
         orderStatus: 'shipped'
       });
+
+      // Send Shipment Dispatch Email
+      const userEmail = order.address?.email || order.userEmail;
+      if (userEmail) {
+        await sendEmail(userEmail, emailTemplates.shipmentDispatch({ id: orderId, ...order }, trackingId));
+      }
+
       res.json({ success: true, trackingId });
     } else {
       res.status(400).json({ error: "Failed to create shipment", details: response.data });

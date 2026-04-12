@@ -176,7 +176,8 @@ export default function Checkout({ user }: CheckoutProps) {
     fetchSettings();
 
     if (user?.addresses?.length) {
-      setAddress(user.addresses[0]);
+      const primaryAddress = user.addresses.find(addr => addr.isPrimary) || user.addresses[0];
+      setAddress(primaryAddress);
       setShowSavedAddresses(true);
     } else if (user) {
       setAddress(prev => ({
@@ -244,10 +245,22 @@ export default function Checkout({ user }: CheckoutProps) {
           address,
           deliveryEstimate: estDelivery.formatted,
           estimatedDelivery: estDelivery,
-          createdAt: new Date().toISOString(),
         };
 
-        const orderRef = await addDoc(collection(db, "orders"), orderData);
+        const orderRes = await fetch("/api/orders/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            orderData: {
+              ...orderData,
+              userEmail: user.email
+            } 
+          })
+        });
+        const orderResult = await orderRes.json();
+        if (!orderRes.ok) throw new Error(orderResult.error || "Failed to place order");
+        
+        const orderId = orderResult.orderId;
         
         // Update Coupon Stats
         if (appliedCoupon) {
@@ -273,7 +286,7 @@ export default function Checkout({ user }: CheckoutProps) {
         
         toast.success("Order placed successfully!");
         if (!directPurchase) clearCart();
-        navigate(`/track/${orderRef.id}`);
+        navigate(`/track/${orderId}`);
         return;
       }
 
@@ -315,6 +328,7 @@ export default function Checkout({ user }: CheckoutProps) {
                 const estDelivery = calculateEstimatedDelivery(5, 7);
                 const finalOrderData = {
                   userId: user.uid,
+                  userEmail: user.email,
                   items,
                   totalAmount: finalTotal,
                   discountAmount,
@@ -327,11 +341,16 @@ export default function Checkout({ user }: CheckoutProps) {
                   address,
                   deliveryEstimate: estDelivery.formatted,
                   estimatedDelivery: estDelivery,
-                  createdAt: new Date().toISOString(),
                 };
 
-                await addDoc(collection(db, "orders"), finalOrderData);
-                
+                const orderRes = await fetch("/api/orders/create", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ orderData: finalOrderData })
+                });
+                const orderResult = await orderRes.json();
+                if (!orderRes.ok) throw new Error(orderResult.error || "Failed to place order");
+
                 // Update Coupon Stats
                 if (appliedCoupon) {
                   await updateDoc(doc(db, "coupons", appliedCoupon.id), {
@@ -393,19 +412,30 @@ export default function Checkout({ user }: CheckoutProps) {
 
         // Configure specific payment method if requested
         if (method === 'upi') {
+          options.method = "upi";
+          options.prefill.method = "upi";
+          // For 'Others', we show all UPI options
           options.config = {
             display: {
               blocks: {
                 upi: {
-                  name: "Pay via UPI",
-                  instruments: [{ method: "upi" }]
+                  name: "Pay via any UPI App",
+                  instruments: [
+                    {
+                      method: "upi"
+                    }
+                  ]
                 }
               },
               sequence: ["block.upi"],
-              preferences: { show_default_blocks: false }
+              preferences: {
+                show_default_blocks: false
+              }
             }
           };
         } else if (method === 'card') {
+          options.method = "card";
+          options.prefill.method = "card";
           options.config = {
             display: {
               blocks: {
@@ -419,6 +449,8 @@ export default function Checkout({ user }: CheckoutProps) {
             }
           };
         } else if (method === 'netbanking') {
+          options.method = "netbanking";
+          options.prefill.method = "netbanking";
           options.config = {
             display: {
               blocks: {
@@ -432,6 +464,8 @@ export default function Checkout({ user }: CheckoutProps) {
             }
           };
         } else if (method === 'wallet') {
+          options.method = "wallet";
+          options.prefill.method = "wallet";
           options.config = {
             display: {
               blocks: {
@@ -446,25 +480,40 @@ export default function Checkout({ user }: CheckoutProps) {
           };
         } else if (method.startsWith('upi_')) {
           const appId = method.split('_')[1];
-          // Map our IDs to Razorpay's expected app names
           const appMap: Record<string, string> = {
             'phonepe': 'phonepe',
-            'google_pay': 'gpay',
+            'google_pay': 'google_pay',
             'paytm': 'paytm',
             'bhim': 'bhim'
           };
           const appName = appMap[appId] || appId;
           
+          options.method = "upi";
+          options.prefill.method = "upi";
+          // Direct intent flow for mobile apps
+          options.upi = {
+            flow: 'intent',
+            app: appName
+          };
+          
+          // To ensure the app is "pre-selected" in the UI
           options.config = {
             display: {
               blocks: {
                 upi: {
-                  name: `Pay via ${method.split('_')[1].replace('_', ' ').toUpperCase()}`,
-                  instruments: [{ method: "upi", flows: ["intent"], apps: [appName] }]
+                  name: `Pay via ${appName.toUpperCase()}`,
+                  instruments: [
+                    { 
+                      method: "upi", 
+                      apps: [appName]
+                    }
+                  ]
                 }
               },
               sequence: ["block.upi"],
-              preferences: { show_default_blocks: false }
+              preferences: { 
+                show_default_blocks: false
+              }
             }
           };
         }
@@ -494,10 +543,22 @@ export default function Checkout({ user }: CheckoutProps) {
           address,
           deliveryEstimate: estDelivery.formatted,
           estimatedDelivery: estDelivery,
-          createdAt: new Date().toISOString(),
         };
 
-        const orderRef = await addDoc(collection(db, "orders"), orderData);
+        const orderRes = await fetch("/api/orders/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            orderData: {
+              ...orderData,
+              userEmail: user.email
+            } 
+          })
+        });
+        const orderResult = await orderRes.json();
+        if (!orderRes.ok) throw new Error(orderResult.error || "Failed to place order");
+        
+        const orderId = orderResult.orderId;
         
         // Update Coupon Stats
         if (appliedCoupon) {
@@ -523,7 +584,7 @@ export default function Checkout({ user }: CheckoutProps) {
         
         toast.success("Order placed successfully!");
         if (!directPurchase) clearCart();
-        navigate(`/track/${orderRef.id}`);
+        navigate(`/track/${orderId}`);
       }
     } catch (error: any) {
       console.error("Order error:", error);
@@ -540,7 +601,17 @@ export default function Checkout({ user }: CheckoutProps) {
       <header className="bg-white sticky top-0 z-50 border-b border-gray-200">
         <div className="flex items-center justify-between px-4 py-4">
           <div className="flex items-center space-x-4">
-            <button onClick={() => navigate(-1)} className="p-1">
+            <button 
+              onClick={() => {
+                if (window.history.length > 1) {
+                  navigate(-1);
+                } else {
+                  navigate("/");
+                }
+              }} 
+              className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
+              aria-label="Go back"
+            >
               <ArrowLeft size={24} className="text-gray-700" />
             </button>
             <h1 className="text-xl font-serif tracking-widest uppercase font-bold text-black">MUNNU</h1>
@@ -747,7 +818,16 @@ export default function Checkout({ user }: CheckoutProps) {
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-start space-x-3">
                   <div className="w-8 h-8 flex items-center justify-center">
-                    <img src="https://cdn.iconscout.com/icon/free/png-256/free-upi-logo-icon-download-in-svg-png-gif-file-formats--unified-payments-interface-payment-money-transfer-logos-icons-1747946.png" alt="UPI" className="w-6 h-6 object-contain" />
+                    <img 
+                      src="https://img.icons8.com/color/96/bhim.png" 
+                      alt="UPI" 
+                      className="w-full h-full object-contain" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = "https://static-assets-web.flixcart.com/fk-p-linchpin-web/batman-returns/logos/upi-logo.png";
+                      }}
+                    />
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-800">UPI</h4>
@@ -755,24 +835,35 @@ export default function Checkout({ user }: CheckoutProps) {
                 </div>
                 <span className="font-bold text-gray-800">{formatCurrency(finalTotal)}</span>
               </div>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                 {[
-                  { name: 'PhonePe', id: 'phonepe', icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/PhonePe_logo.svg/256px-PhonePe_logo.svg.png' },
-                  { name: 'GPay', id: 'google_pay', icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/256px-Google_Pay_Logo.svg.png' },
-                  { name: 'Paytm', id: 'paytm', icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Paytm_logo.svg/256px-Paytm_logo.svg.png' },
-                  { name: 'BHIM', id: 'bhim', icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Bhim_logo.svg/256px-Bhim_logo.svg.png' },
-                  { name: 'Others', id: 'upi', icon: 'https://cdn.iconscout.com/icon/free/png-256/free-upi-logo-icon-download-in-svg-png-gif-file-formats--unified-payments-interface-payment-money-transfer-logos-icons-1747946.png' }
+                  { name: 'PhonePe', id: 'phonepe', icon: 'https://img.icons8.com/color/96/phone-pe.png' },
+                  { name: 'GPay', id: 'google_pay', icon: 'https://img.icons8.com/color/96/google-pay.png' },
+                  { name: 'Paytm', id: 'paytm', icon: 'https://img.icons8.com/color/96/paytm.png' },
+                  { name: 'Others', id: 'upi', icon: 'https://img.icons8.com/color/96/bhim.png' }
                 ].map((app, i) => (
                   <button 
                     key={i} 
                     onClick={() => handlePlaceOrder(app.id === 'upi' ? 'upi' : `upi_${app.id}`)}
                     aria-label={`Pay using ${app.name}`}
-                    className="flex-1 py-2 border border-gray-100 rounded-lg flex flex-col items-center justify-center bg-gray-50 hover:border-green-500 hover:bg-green-50 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="py-3 border border-gray-100 rounded-xl flex flex-col items-center justify-center bg-gray-50 hover:border-green-500 hover:bg-green-50 transition-all focus:outline-none focus:ring-2 focus:ring-green-500 active:scale-95 min-w-0"
                   >
-                    <div className="w-6 h-6 bg-white rounded-full shadow-sm mb-1 flex items-center justify-center p-1">
-                      <img src={app.icon} alt={app.name} className="w-full h-full object-contain" />
+                    <div className="w-10 h-10 mb-1 flex items-center justify-center overflow-hidden bg-white rounded-lg p-1 shadow-sm">
+                      <img 
+                        src={app.icon} 
+                        alt={app.name} 
+                        className="w-full h-full object-contain" 
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          const fallback = "https://img.icons8.com/color/96/bhim.png";
+                          if (target.src !== fallback) {
+                            target.src = fallback;
+                          }
+                        }}
+                      />
                     </div>
-                    <span className="text-[9px] text-gray-600 font-medium">{app.name}</span>
+                    <span className="text-[9px] sm:text-[10px] text-gray-700 font-bold whitespace-nowrap truncate w-full px-1 text-center">{app.name}</span>
                   </button>
                 ))}
               </div>
@@ -940,6 +1031,7 @@ export default function Checkout({ user }: CheckoutProps) {
         confirmText="Place Order"
         isDestructive={false}
         isLoading={loading}
+        icon={Truck}
       />
     </div>
   );

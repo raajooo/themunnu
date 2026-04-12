@@ -19,6 +19,7 @@ export default function Profile({ user }: ProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [email, setEmail] = useState(user?.email || "");
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
 
   React.useEffect(() => {
     if (user) {
@@ -36,8 +37,10 @@ export default function Profile({ user }: ProfileProps) {
     pincode: "",
     address: "",
     city: "",
-    state: ""
+    state: "",
+    isPrimary: false
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -76,6 +79,24 @@ export default function Profile({ user }: ProfileProps) {
   };
 
   const handleUpdateProfile = async () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!displayName.trim()) {
+      newErrors.displayName = "Display name is required";
+    }
+
+    if (!email.trim()) {
+      newErrors.email = "Email address is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      newErrors.email = "Please enter a valid email address";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setProfileErrors(newErrors);
+      return;
+    }
+
+    setProfileErrors({});
     try {
       await updateDoc(doc(db, "users", user.uid), { displayName, email });
       toast.success("Profile updated");
@@ -87,19 +108,22 @@ export default function Profile({ user }: ProfileProps) {
 
   const handleOpenAdd = () => {
     setEditingAddress(null);
+    setErrors({});
     setNewAddress({
       name: user?.displayName || "",
       phone: user?.phoneNumber || "",
       pincode: "",
       address: "",
       city: "",
-      state: ""
+      state: "",
+      isPrimary: (user.addresses?.length || 0) === 0
     });
     setIsAddingAddress(true);
   };
 
   const handleOpenEdit = (address: Address) => {
     setEditingAddress(address);
+    setErrors({});
     setNewAddress(address);
     setIsAddingAddress(true);
   };
@@ -107,7 +131,8 @@ export default function Profile({ user }: ProfileProps) {
   const handleCloseModal = () => {
     setIsAddingAddress(false);
     setEditingAddress(null);
-    setNewAddress({ name: "", phone: "", pincode: "", address: "", city: "", state: "" });
+    setErrors({});
+    setNewAddress({ name: "", phone: "", pincode: "", address: "", city: "", state: "", isPrimary: false });
   };
 
   const handlePincodeChange = async (pincode: string) => {
@@ -124,48 +149,75 @@ export default function Profile({ user }: ProfileProps) {
     }
   };
 
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!newAddress.name?.trim()) newErrors.name = "Full name is required";
+    if (!newAddress.phone?.trim()) {
+      newErrors.phone = "Phone number is required";
+    } else if (!/^\d{10}$/.test(newAddress.phone.trim())) {
+      newErrors.phone = "Phone number must be exactly 10 digits";
+    }
+    if (!newAddress.address?.trim()) newErrors.address = "Address is required";
+    if (!newAddress.city?.trim()) newErrors.city = "City is required";
+    if (!newAddress.state?.trim()) newErrors.state = "State is required";
+    if (!newAddress.pincode?.trim()) {
+      newErrors.pincode = "Pincode is required";
+    } else if (!/^\d{6}$/.test(newAddress.pincode.trim())) {
+      newErrors.pincode = "Pincode must be exactly 6 digits";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleAddAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation
-    if (!newAddress.name?.trim()) return toast.error("Name is required");
-    if (!newAddress.phone?.trim()) return toast.error("Phone number is required");
-    if (!/^\d{10}$/.test(newAddress.phone.trim())) return toast.error("Phone number must be 10 digits");
-    if (!newAddress.address?.trim()) return toast.error("Address is required");
-    if (!newAddress.city?.trim()) return toast.error("City is required");
-    if (!newAddress.state?.trim()) return toast.error("State is required");
-    if (!newAddress.pincode?.trim()) return toast.error("Pincode is required");
-    if (!/^\d{6}$/.test(newAddress.pincode.trim())) return toast.error("Pincode must be 6 digits");
+    if (!validateForm()) return;
 
     setLoading(true);
     try {
+      let updatedAddresses = [...(user.addresses || [])];
+      
+      if (newAddress.isPrimary) {
+        updatedAddresses = updatedAddresses.map(addr => ({ ...addr, isPrimary: false }));
+      }
+
       if (editingAddress) {
-        // Update existing address
-        const updatedAddresses = (user.addresses || []).map(addr => 
+        updatedAddresses = updatedAddresses.map(addr => 
           addr.id === editingAddress.id ? { ...newAddress, id: addr.id } as Address : addr
         );
-        await updateDoc(doc(db, "users", user.uid), {
-          addresses: updatedAddresses
-        });
-        toast.success("Address updated successfully");
       } else {
-        // Add new address
         const addressToAdd = {
           ...newAddress,
           id: Math.random().toString(36).slice(2)
         } as Address;
-
-        await updateDoc(doc(db, "users", user.uid), {
-          addresses: arrayUnion(addressToAdd)
-        });
-        toast.success("Address added successfully");
+        updatedAddresses.push(addressToAdd);
       }
 
+      await updateDoc(doc(db, "users", user.uid), {
+        addresses: updatedAddresses
+      });
+      toast.success(editingAddress ? "Address updated successfully" : "Address added successfully");
       handleCloseModal();
     } catch (error) {
       toast.error(editingAddress ? "Failed to update address" : "Failed to add address");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSetPrimary = async (address: Address) => {
+    try {
+      const updatedAddresses = (user.addresses || []).map(addr => ({
+        ...addr,
+        isPrimary: addr.id === address.id
+      }));
+      await updateDoc(doc(db, "users", user.uid), {
+        addresses: updatedAddresses
+      });
+      toast.success("Primary address updated");
+    } catch (error) {
+      toast.error("Failed to set primary address");
     }
   };
 
@@ -260,12 +312,15 @@ export default function Profile({ user }: ProfileProps) {
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Display Name</label>
                 {isEditing ? (
-                  <input 
-                    type="text" 
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                  />
+                  <div className="space-y-1">
+                    <input 
+                      type="text" 
+                      className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.displayName ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                    {profileErrors.displayName && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.displayName}</p>}
+                  </div>
                 ) : (
                   <p className="text-lg font-bold">{user.displayName || "Not set"}</p>
                 )}
@@ -273,13 +328,16 @@ export default function Profile({ user }: ProfileProps) {
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Email Address</label>
                 {isEditing ? (
-                  <input 
-                    type="email" 
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                  />
+                  <div className="space-y-1">
+                    <input 
+                      type="email" 
+                      className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.email ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email"
+                    />
+                    {profileErrors.email && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.email}</p>}
+                  </div>
                 ) : (
                   <div className="flex items-center justify-between">
                     <p className="text-lg font-bold">{user.email || "Not set"}</p>
@@ -317,24 +375,38 @@ export default function Profile({ user }: ProfileProps) {
             <div className="space-y-4">
               {(user.addresses?.length || 0) > 0 ? (
                 user.addresses?.map(addr => (
-                  <div key={addr.id} className="p-6 bg-gray-50 dark:bg-gray-900 rounded-3xl flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold uppercase tracking-tight mb-1">{addr.name}</h4>
-                      <p className="text-sm text-gray-500 leading-relaxed">
+                  <div key={addr.id} className={`p-6 rounded-3xl flex justify-between items-start border-2 transition-all ${addr.isPrimary ? 'bg-black text-white border-black shadow-2xl shadow-black/40 scale-[1.02] ring-4 ring-black/5' : 'bg-gray-50 dark:bg-gray-900 border-transparent'}`}>
+                    <div className="flex-grow">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <h4 className="font-bold uppercase tracking-tight">{addr.name}</h4>
+                        {addr.isPrimary && (
+                          <span className="bg-white text-black text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Primary</span>
+                        )}
+                      </div>
+                      <p className={`text-sm leading-relaxed ${addr.isPrimary ? 'text-gray-300' : 'text-gray-500'}`}>
                         {addr.address}, {addr.city}, {addr.state} - {addr.pincode}
                       </p>
-                      <p className="text-xs font-bold mt-2 text-gray-400">{addr.phone}</p>
+                      <p className={`text-xs font-bold mt-2 ${addr.isPrimary ? 'text-gray-400' : 'text-gray-400'}`}>{addr.phone}</p>
+                      
+                      {!addr.isPrimary && (
+                        <button 
+                          onClick={() => handleSetPrimary(addr)}
+                          className="mt-4 text-[10px] font-black uppercase tracking-widest underline underline-offset-4 hover:text-black dark:hover:text-white transition-colors"
+                        >
+                          Set as Primary
+                        </button>
+                      )}
                     </div>
                     <div className="flex space-x-2">
                       <button 
                         onClick={() => handleOpenEdit(addr)}
-                        className="p-2 hover:bg-white dark:hover:bg-black rounded-full transition-colors"
+                        className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-white/10' : 'hover:bg-white dark:hover:bg-black'}`}
                       >
                         <Edit2 size={16} />
                       </button>
                       <button 
                         onClick={() => handleDeleteAddress(addr)}
-                        className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-full transition-colors"
+                        className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500'}`}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -370,21 +442,21 @@ export default function Profile({ user }: ProfileProps) {
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Full Name</label>
                         <input 
                           type="text" 
-                          required
-                          className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.name ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                           value={newAddress.name}
                           onChange={(e) => setNewAddress({...newAddress, name: e.target.value})}
                         />
+                        {errors.name && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.name}</p>}
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Phone Number</label>
                         <input 
                           type="tel" 
-                          required
-                          className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.phone ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                           value={newAddress.phone}
-                          onChange={(e) => setNewAddress({...newAddress, phone: e.target.value})}
+                          onChange={(e) => setNewAddress({...newAddress, phone: e.target.value.replace(/\D/g, '').slice(0, 10)})}
                         />
+                        {errors.phone && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.phone}</p>}
                       </div>
                     </div>
 
@@ -392,11 +464,11 @@ export default function Profile({ user }: ProfileProps) {
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Address (House No, Street, Area)</label>
                       <input 
                         type="text" 
-                        required
-                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                        className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.address ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                         value={newAddress.address}
                         onChange={(e) => setNewAddress({...newAddress, address: e.target.value})}
                       />
+                      {errors.address && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.address}</p>}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -404,22 +476,22 @@ export default function Profile({ user }: ProfileProps) {
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">City</label>
                         <input 
                           type="text" 
-                          required
-                          className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.city ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                           value={newAddress.city}
                           onChange={(e) => setNewAddress({...newAddress, city: e.target.value})}
                         />
+                        {errors.city && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.city}</p>}
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Pincode</label>
                         <input 
                           type="text" 
-                          required
                           maxLength={6}
-                          className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.pincode ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                           value={newAddress.pincode}
-                          onChange={(e) => handlePincodeChange(e.target.value)}
+                          onChange={(e) => handlePincodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         />
+                        {errors.pincode && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.pincode}</p>}
                       </div>
                     </div>
 
@@ -427,11 +499,22 @@ export default function Profile({ user }: ProfileProps) {
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">State</label>
                       <input 
                         type="text" 
-                        required
-                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-bold"
+                        className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${errors.state ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
                         value={newAddress.state}
                         onChange={(e) => setNewAddress({...newAddress, state: e.target.value})}
                       />
+                      {errors.state && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{errors.state}</p>}
+                    </div>
+
+                    <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl">
+                      <input 
+                        type="checkbox" 
+                        id="isPrimary"
+                        className="w-5 h-5 rounded-lg accent-black dark:accent-white"
+                        checked={newAddress.isPrimary}
+                        onChange={(e) => setNewAddress({...newAddress, isPrimary: e.target.checked})}
+                      />
+                      <label htmlFor="isPrimary" className="text-xs font-black uppercase tracking-widest cursor-pointer">Set as Primary Address</label>
                     </div>
 
                     <div className="pt-4 flex space-x-4">

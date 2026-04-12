@@ -34,6 +34,7 @@ export interface Address {
   address: string;
   city: string;
   state: string;
+  isPrimary?: boolean;
 }
 
 export interface Order {

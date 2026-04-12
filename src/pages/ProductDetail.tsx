@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { doc, getDoc, collection, query, where, orderBy, getDocs, addDoc, serverTimestamp, runTransaction } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, orderBy, getDocs, addDoc, serverTimestamp, runTransaction, onSnapshot } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { Product, Review } from "../types";
 import { useCart } from "../hooks/useCart";
@@ -139,23 +139,26 @@ export default function ProductDetail() {
       }
     };
 
-    const fetchReviews = async () => {
+    const fetchReviews = () => {
       if (!id) return;
-      try {
-        const q = query(
-          collection(db, "reviews"),
-          where("productId", "==", id),
-          orderBy("createdAt", "desc")
-        );
-        const snap = await getDocs(q);
-        setReviews(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
-      } catch (error) {
+      const q = query(
+        collection(db, "reviews"),
+        where("productId", "==", id),
+        orderBy("createdAt", "desc")
+      );
+      
+      return onSnapshot(q, (snapshot) => {
+        setReviews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
+      }, (error) => {
         handleFirestoreError(error, OperationType.GET, `reviews?productId=${id}`);
-      }
+      });
     };
 
     fetchProduct();
-    fetchReviews();
+    const unsubscribeReviews = fetchReviews();
+    return () => {
+      if (unsubscribeReviews) unsubscribeReviews();
+    };
   }, [id]);
 
   useEffect(() => {
@@ -186,7 +189,19 @@ export default function ProductDetail() {
     setSubmittingReview(true);
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Add the review
+        // 1. READ FIRST: Get the product data
+        const productRef = doc(db, "products", id);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) throw new Error("Product does not exist!");
+
+        const currentData = productSnap.data() as Product;
+        const oldCount = currentData.reviewCount || 0;
+        const oldAvg = currentData.averageRating || 0;
+        
+        const newCount = oldCount + 1;
+        const newAvg = ((oldAvg * oldCount) + newRating) / newCount;
+
+        // 2. WRITE SECOND: Add the review and update product stats
         const reviewRef = collection(db, "reviews");
         const newReviewData = {
           productId: id,
@@ -197,22 +212,8 @@ export default function ProductDetail() {
           createdAt: new Date().toISOString()
         };
         
-        // We can't use addDoc inside a transaction easily with the standard SDK without a ref
-        // So we'll just use a doc ref with auto-id
         const newReviewDocRef = doc(reviewRef);
         transaction.set(newReviewDocRef, newReviewData);
-
-        // 2. Update product stats
-        const productRef = doc(db, "products", id);
-        const productSnap = await transaction.get(productRef);
-        if (!productSnap.exists()) throw "Product does not exist!";
-
-        const currentData = productSnap.data() as Product;
-        const oldCount = currentData.reviewCount || 0;
-        const oldAvg = currentData.averageRating || 0;
-        
-        const newCount = oldCount + 1;
-        const newAvg = ((oldAvg * oldCount) + newRating) / newCount;
 
         transaction.update(productRef, {
           reviewCount: newCount,

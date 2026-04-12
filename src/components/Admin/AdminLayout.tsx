@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, Settings, LogOut, Menu, X, Tags, Users, ArrowRight, ChevronLeft, Tag, Image as ImageIcon, Mail } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Settings, LogOut, Menu, X, Tags, Users, ArrowRight, ChevronLeft, Tag, Image as ImageIcon, Mail, MessageSquare } from "lucide-react";
 import React, { useState } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
@@ -74,6 +74,7 @@ export default function AdminLayout() {
     { path: "/admin/orders", icon: ShoppingCart, label: "Orders" },
     { path: "/admin/banners", icon: ImageIcon, label: "Banners" },
     { path: "/admin/newsletters", icon: Mail, label: "Newsletters" },
+    { path: "/admin/reviews", icon: MessageSquare, label: "Reviews" },
     { path: "/admin/users", icon: Users, label: "Users" },
     { path: "/admin/settings", icon: Settings, label: "Settings" },
   ];
