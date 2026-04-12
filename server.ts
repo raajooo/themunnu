@@ -14,7 +14,16 @@ import nodemailer from "nodemailer";
 import cors from "cors";
 
 const require = createRequire(import.meta.url);
-const firebaseConfig = require("./firebase-applet-config.json");
+let firebaseConfig: any;
+try {
+  firebaseConfig = require("./firebase-applet-config.json");
+} catch (e) {
+  console.warn("Firebase config file not found, using environment variables if available");
+  firebaseConfig = {
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID
+  };
+}
 
 dotenv.config();
 
