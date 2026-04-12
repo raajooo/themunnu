@@ -837,7 +837,10 @@ app.use((err: any, req: any, res: any, next: any) => {
 });
 
 // Vite / Static Serving
-if (process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1") {
+if (process.env.VERCEL === "1") {
+  // On Vercel, static files and SPA routing are handled by vercel.json
+  // We only need to ensure API routes are handled, which they are above.
+} else if (process.env.NODE_ENV !== "production") {
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     server: { middlewareMode: true },
