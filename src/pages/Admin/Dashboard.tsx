@@ -5,7 +5,7 @@ import { db } from "../../firebase";
 import { Order } from "../../types";
 import { formatCurrency } from "../../lib/utils";
 import { motion } from "motion/react";
-import { ShoppingCart, Package, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Calendar } from "lucide-react";
+import { ShoppingCart, Package, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Calendar, Mail, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { handleFirestoreError, OperationType } from "../../lib/firestore-errors";
 import { 
@@ -38,6 +38,7 @@ export default function AdminDashboard() {
   const [usersCount, setUsersCount] = useState(0);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [smtpStatus, setSmtpStatus] = useState<"connected" | "error" | "not_configured" | "loading">("loading");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -79,6 +80,18 @@ export default function AdminDashboard() {
         setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       }
     );
+
+    // Check SMTP Status
+    const checkSmtp = async () => {
+      try {
+        const res = await fetch("/api/health");
+        const data = await res.json();
+        setSmtpStatus(data.smtp || "not_configured");
+      } catch (err) {
+        setSmtpStatus("error");
+      }
+    };
+    checkSmtp();
 
     return () => {
       unsubscribeOrders();
@@ -230,7 +243,18 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h1 className="text-5xl font-black tracking-tighter uppercase mb-2">Dashboard</h1>
-          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Overview of your sneaker empire</p>
+          <div className="flex items-center space-x-4">
+            <p className="text-gray-500 text-sm font-medium uppercase tracking-widest">Overview of your sneaker empire</p>
+            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${
+              smtpStatus === 'connected' ? 'bg-green-50 text-green-600 border-green-100' :
+              smtpStatus === 'error' ? 'bg-red-50 text-red-600 border-red-100' :
+              'bg-gray-50 text-gray-400 border-gray-100'
+            }`}>
+              <Mail size={10} />
+              <span>Email Service: {smtpStatus === 'connected' ? 'Active' : smtpStatus === 'error' ? 'Error' : 'Not Configured'}</span>
+              {smtpStatus === 'connected' ? <CheckCircle2 size={10} /> : smtpStatus === 'error' ? <XCircle size={10} /> : <AlertCircle size={10} />}
+            </div>
+          </div>
         </div>
         <div className="flex flex-wrap gap-4">
           <button 

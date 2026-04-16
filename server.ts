@@ -210,8 +210,23 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // API Routes
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Munnu API is running" });
+app.get("/api/health", async (req, res) => {
+  let smtpStatus = "not_configured";
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      await transporter.verify();
+      smtpStatus = "connected";
+    } catch (err) {
+      smtpStatus = "error";
+      console.error("SMTP Verification Error:", err);
+    }
+  }
+  
+  res.json({ 
+    status: "ok", 
+    message: "Munnu API is running",
+    smtp: smtpStatus
+  });
 });
 
 // --- ORDER ROUTES ---
@@ -375,6 +390,7 @@ app.post("/api/admin/send-newsletter", async (req, res) => {
       console.log(`Newsletter "${subject}" sent to ${subscribers.length} subscribers`);
     } else {
       console.log(`[MOCK] Newsletter "${subject}" to ${subscribers.length} subscribers (SMTP not configured)`);
+      return res.status(500).json({ error: "Email service not configured. Please set SMTP_USER and SMTP_PASS in settings." });
     }
 
     res.json({ success: true, message: `Newsletter sent to ${subscribers.length} subscribers` });
@@ -461,6 +477,10 @@ app.post("/api/auth/send-otp", async (req, res) => {
       console.log(`OTP ${otp} sent to ${email}`);
     } else {
       console.log(`[MOCK] OTP ${otp} to ${email} (SMTP not configured)`);
+      return res.status(500).json({ 
+        error: "Email service not configured. Please set SMTP_USER and SMTP_PASS in settings.",
+        otp: process.env.NODE_ENV === 'development' ? otp : undefined // Show OTP in dev mode for testing
+      });
     }
 
     const otpToken = jwt.sign({ email, otp, phoneNumber }, JWT_SECRET, { expiresIn: "10m" });

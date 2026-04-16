@@ -1,21 +1,33 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, enableMultiTabIndexedDbPersistence, getDocFromServer, doc } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Enable offline persistence
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Multiple tabs open, persistence can only be enabled in one tab at a a time.
-      console.warn('Firestore persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      // The current browser does not support all of the features required to enable persistence
-      console.warn('Firestore persistence failed: Browser not supported');
+// Use initializeFirestore with experimentalForceLongPolling to bypass potential WebSocket blocks
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId);
+
+// Connection Test
+async function testConnection() {
+  try {
+    // Try to fetch a non-existent doc just to check connectivity
+    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+    console.log("Firestore: Connection successful");
+  } catch (error: any) {
+    if (error.message?.includes('the client is offline')) {
+      console.error("Firestore: Connection failed - check configuration or network.");
     }
+  }
+}
+testConnection();
+
+// Enable modern multi-tab persistence
+if (typeof window !== 'undefined') {
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    console.warn('Firestore persistence warning:', err.message);
   });
 }
 

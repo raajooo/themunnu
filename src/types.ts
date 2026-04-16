@@ -95,6 +95,8 @@ export interface OrderItem {
 export interface Banner {
   id: string;
   imageUrl: string;
+  videoUrl?: string;
+  mediaType?: 'image' | 'video';
   link: string;
   title: string;
   subtitle?: string;

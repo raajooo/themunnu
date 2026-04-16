@@ -187,11 +187,22 @@ export default function Home() {
               className="absolute inset-0"
             >
               <div className="absolute inset-0 opacity-60">
-                <LazyImage 
-                  src={banners[currentBanner].imageUrl} 
-                  alt={banners[currentBanner].title} 
-                  className="w-full h-full object-cover"
-                />
+                {banners[currentBanner].mediaType === 'video' ? (
+                  <video 
+                    src={banners[currentBanner].videoUrl} 
+                    autoPlay 
+                    muted 
+                    loop 
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <LazyImage 
+                    src={banners[currentBanner].imageUrl} 
+                    alt={banners[currentBanner].title} 
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
               

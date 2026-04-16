@@ -19,6 +19,8 @@ export default function AdminBanners() {
     title: "",
     subtitle: "",
     imageUrl: "",
+    videoUrl: "",
+    mediaType: "image",
     link: "",
     isActive: true,
     order: 0
@@ -160,8 +162,18 @@ export default function AdminBanners() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title || !formData.imageUrl) {
-      toast.error("Please provide a title and an image");
+    if (!formData.title) {
+      toast.error("Please provide a title");
+      return;
+    }
+
+    if (formData.mediaType === 'image' && !formData.imageUrl) {
+      toast.error("Please provide an image");
+      return;
+    }
+
+    if (formData.mediaType === 'video' && !formData.videoUrl) {
+      toast.error("Please provide a video URL");
       return;
     }
 
@@ -394,7 +406,8 @@ export default function AdminBanners() {
                   />
                 </th>
                 <th className="px-8 py-6">Order</th>
-                <th className="px-8 py-6">Image</th>
+                <th className="px-8 py-6">Type</th>
+                <th className="px-8 py-6">Preview</th>
                 <th className="px-8 py-6">Title / Subtitle</th>
                 <th className="px-8 py-6">Status</th>
                 <th className="px-8 py-6 text-right">Actions</th>
@@ -431,8 +444,17 @@ export default function AdminBanners() {
                     </div>
                   </td>
                   <td className="px-8 py-6">
+                    <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${banner.mediaType === 'video' ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
+                      {banner.mediaType || 'image'}
+                    </span>
+                  </td>
+                  <td className="px-8 py-6">
                     <div className="w-32 h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
-                      <LazyImage src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
+                      {banner.mediaType === 'video' ? (
+                        <video src={banner.videoUrl} className="w-full h-full object-cover" muted />
+                      ) : (
+                        <LazyImage src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
+                      )}
                     </div>
                   </td>
                   <td className="px-8 py-6">
@@ -501,74 +523,116 @@ export default function AdminBanners() {
 
               <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Banner Image</label>
-                  <div className="flex flex-col space-y-4">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Compression Settings</label>
-                      <div className="flex space-x-2">
-                        {(['high', 'balanced', 'small', 'custom'] as const).map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setCompressionPreset(preset)}
-                            className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${compressionPreset === preset ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 text-gray-400 dark:bg-gray-900'}`}
-                          >
-                            {preset}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Media Type</label>
+                    <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, mediaType: 'image' })}
+                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.mediaType === 'image' ? 'bg-white dark:bg-black shadow-sm' : 'text-gray-400'}`}
+                      >
+                        Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, mediaType: 'video' })}
+                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.mediaType === 'video' ? 'bg-white dark:bg-black shadow-sm' : 'text-gray-400'}`}
+                      >
+                        Video
+                      </button>
                     </div>
+                  </div>
 
-                    {compressionPreset === 'custom' && (
-                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900 rounded-2xl space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">Quality</span>
-                          <span className="text-[10px] font-black">{Math.round(customQuality * 100)}%</span>
-                        </div>
+                  {formData.mediaType === 'video' ? (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Video URL (HD)</label>
                         <input 
-                          type="range" 
-                          min="0.1" 
-                          max="1.0" 
-                          step="0.05" 
-                          value={customQuality}
-                          onChange={(e) => setCustomQuality(parseFloat(e.target.value))}
-                          className="w-full accent-black dark:accent-white"
+                          type="text" 
+                          placeholder="Paste direct video URL (mp4, webm)"
+                          className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all font-mono text-sm"
+                          value={formData.videoUrl}
+                          onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
                         />
+                        <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">
+                          Tip: Use a direct link from a CDN or hosting service for best performance.
+                        </p>
                       </div>
-                    )}
-
-                    <div className="w-full aspect-[21/9] rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
-                      {formData.imageUrl ? (
-                        <>
-                          <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          <button 
-                            type="button"
-                            onClick={() => setFormData({ ...formData, imageUrl: "" })}
-                            className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <X className="text-white" size={24} />
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex flex-col items-center space-y-2">
-                          <Upload className="text-gray-400" size={32} />
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Recommended: 1920x800</span>
+                      {formData.videoUrl && (
+                        <div className="w-full aspect-[21/9] rounded-3xl overflow-hidden bg-black">
+                          <video src={formData.videoUrl} className="w-full h-full object-cover" autoPlay muted loop playsInline />
                         </div>
                       )}
                     </div>
-                    <label className="w-full">
-                      <div className="px-6 py-4 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
-                        {uploading ? "Uploading..." : "Select Banner Image"}
+                  ) : (
+                    <div className="flex flex-col space-y-4">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Compression Settings</label>
+                        <div className="flex space-x-2">
+                          {(['high', 'balanced', 'small', 'custom'] as const).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setCompressionPreset(preset)}
+                              className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${compressionPreset === preset ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 text-gray-400 dark:bg-gray-900'}`}
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={uploading}
-                      />
-                    </label>
-                  </div>
+
+                      {compressionPreset === 'custom' && (
+                        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900 rounded-2xl space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">Quality</span>
+                            <span className="text-[10px] font-black">{Math.round(customQuality * 100)}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0.1" 
+                            max="1.0" 
+                            step="0.05" 
+                            value={customQuality}
+                            onChange={(e) => setCustomQuality(parseFloat(e.target.value))}
+                            className="w-full accent-black dark:accent-white"
+                          />
+                        </div>
+                      )}
+
+                      <div className="w-full aspect-[21/9] rounded-3xl overflow-hidden bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center relative group">
+                        {formData.imageUrl ? (
+                          <>
+                            <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <button 
+                              type="button"
+                              onClick={() => setFormData({ ...formData, imageUrl: "" })}
+                              className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="text-white" size={24} />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center space-y-2">
+                            <Upload className="text-gray-400" size={32} />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Recommended: 1920x800</span>
+                          </div>
+                        )}
+                      </div>
+                      <label className="w-full">
+                        <div className="px-6 py-4 bg-gray-100 dark:bg-gray-900 text-black dark:text-white text-[10px] font-black uppercase tracking-widest rounded-full cursor-pointer hover:opacity-70 transition-opacity text-center">
+                          {uploading ? "Uploading..." : "Select Banner Image"}
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={uploading}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
