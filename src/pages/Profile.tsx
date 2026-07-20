@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { User, Address } from "../types";
 import { auth, db } from "../firebase";
@@ -6,9 +6,10 @@ import { signOut } from "firebase/auth";
 import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "motion/react";
-import { User as UserIcon, MapPin, Package, LogOut, Plus, Trash2, Edit2, X, Loader2, ShieldCheck, MessageCircle, AlertTriangle } from "lucide-react";
+import { User as UserIcon, MapPin, Package, LogOut, Plus, Trash2, Edit2, X, Loader2, ShieldCheck, MessageCircle, AlertTriangle, Heart } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 import { lookupPincode } from "../lib/pincode";
+import WishlistSection from "../components/WishlistSection";
 
 interface ProfileProps {
   user: User | null;
@@ -16,12 +17,24 @@ interface ProfileProps {
 
 export default function Profile({ user }: ProfileProps) {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'profile' | 'wishlist'>('profile');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'wishlist') {
+      setActiveTab('wishlist');
+    } else {
+      setActiveTab('profile');
+    }
+  }, [window.location.search]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [email, setEmail] = useState(user?.email || "");
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (user) {
       if (!displayName && user.displayName) setDisplayName(user.displayName);
       if (!email && user.email) setEmail(user.email);
@@ -274,9 +287,25 @@ export default function Profile({ user }: ProfileProps) {
                 <Package size={20} />
                 <span>My Orders</span>
               </button>
-              <button className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-black dark:bg-white text-white dark:text-black transition-colors text-sm font-bold uppercase tracking-widest">
+              <button 
+                onClick={() => {
+                  setActiveTab('profile');
+                  navigate('/profile', { replace: true });
+                }}
+                className={`w-full flex items-center space-x-4 p-4 rounded-2xl transition-colors text-sm font-bold uppercase tracking-widest ${activeTab === 'profile' ? 'bg-black dark:bg-white text-white dark:text-black' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+              >
                 <UserIcon size={20} />
                 <span>Profile Settings</span>
+              </button>
+              <button 
+                onClick={() => {
+                  setActiveTab('wishlist');
+                  navigate('/profile?tab=wishlist', { replace: true });
+                }}
+                className={`w-full flex items-center space-x-4 p-4 rounded-2xl transition-colors text-sm font-bold uppercase tracking-widest ${activeTab === 'wishlist' ? 'bg-black dark:bg-white text-white dark:text-black' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+              >
+                <Heart size={20} />
+                <span>My Wishlist</span>
               </button>
               <button onClick={handleLogout} className="w-full flex items-center space-x-4 p-4 rounded-2xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors text-sm font-bold uppercase tracking-widest">
                 <LogOut size={20} />
@@ -296,130 +325,136 @@ export default function Profile({ user }: ProfileProps) {
 
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Profile Info */}
-          <section className="bg-white dark:bg-gray-950 p-10 rounded-[2.5rem] border border-gray-100 dark:border-gray-900">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black tracking-tighter uppercase">Personal Info</h3>
-              <button 
-                onClick={() => isEditing ? handleUpdateProfile() : setIsEditing(true)}
-                className="text-xs font-black uppercase tracking-widest underline underline-offset-4"
-              >
-                {isEditing ? "Save Changes" : "Edit Profile"}
-              </button>
-            </div>
+          {activeTab === 'profile' ? (
+            <>
+              {/* Profile Info */}
+              <section className="bg-white dark:bg-gray-950 p-10 rounded-[2.5rem] border border-gray-100 dark:border-gray-900">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-2xl font-black tracking-tighter uppercase">Personal Info</h3>
+                  <button 
+                    onClick={() => isEditing ? handleUpdateProfile() : setIsEditing(true)}
+                    className="text-xs font-black uppercase tracking-widest underline underline-offset-4"
+                  >
+                    {isEditing ? "Save Changes" : "Edit Profile"}
+                  </button>
+                </div>
 
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Display Name</label>
-                {isEditing ? (
-                  <div className="space-y-1">
-                    <input 
-                      type="text" 
-                      className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.displayName ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                    />
-                    {profileErrors.displayName && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.displayName}</p>}
-                  </div>
-                ) : (
-                  <p className="text-lg font-bold">{user.displayName || "Not set"}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Email Address</label>
-                {isEditing ? (
-                  <div className="space-y-1">
-                    <input 
-                      type="email" 
-                      className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.email ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email"
-                    />
-                    {profileErrors.email && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.email}</p>}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <p className="text-lg font-bold">{user.email || "Not set"}</p>
-                    {!user.email && (
-                      <button 
-                        onClick={() => setIsEditing(true)}
-                        className="text-[10px] font-black uppercase tracking-widest bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full hover:scale-105 transition-transform"
-                      >
-                        Add Email
-                      </button>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Display Name</label>
+                    {isEditing ? (
+                      <div className="space-y-1">
+                        <input 
+                          type="text" 
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.displayName ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
+                          value={displayName}
+                          onChange={(e) => setDisplayName(e.target.value)}
+                        />
+                        {profileErrors.displayName && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.displayName}</p>}
+                      </div>
+                    ) : (
+                      <p className="text-lg font-bold">{user.displayName || "Not set"}</p>
                     )}
                   </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Phone Number</label>
-                <p className="text-lg font-bold">{user.phoneNumber}</p>
-              </div>
-            </div>
-          </section>
-
-          {/* Addresses */}
-          <section className="bg-white dark:bg-gray-950 p-10 rounded-[2.5rem] border border-gray-100 dark:border-gray-900">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black tracking-tighter uppercase">Saved Addresses</h3>
-              <button 
-                onClick={handleOpenAdd}
-                className="flex items-center space-x-2 text-xs font-black uppercase tracking-widest bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-full hover:scale-105 transition-transform"
-              >
-                <Plus size={16} />
-                <span>Add New</span>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {(user.addresses?.length || 0) > 0 ? (
-                user.addresses?.map(addr => (
-                  <div key={addr.id} className={`p-6 rounded-3xl flex justify-between items-start border-2 transition-all ${addr.isPrimary ? 'bg-black text-white border-black shadow-2xl shadow-black/40 scale-[1.02] ring-4 ring-black/5' : 'bg-gray-50 dark:bg-gray-900 border-transparent'}`}>
-                    <div className="flex-grow">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-bold uppercase tracking-tight">{addr.name}</h4>
-                        {addr.isPrimary && (
-                          <span className="bg-white text-black text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Primary</span>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Email Address</label>
+                    {isEditing ? (
+                      <div className="space-y-1">
+                        <input 
+                          type="email" 
+                          className={`w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 rounded-2xl focus:outline-none focus:ring-2 transition-all font-bold ${profileErrors.email ? 'ring-2 ring-red-500' : 'focus:ring-black dark:focus:ring-white'}`}
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="Enter your email"
+                        />
+                        {profileErrors.email && <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest ml-2">{profileErrors.email}</p>}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <p className="text-lg font-bold">{user.email || "Not set"}</p>
+                        {!user.email && (
+                          <button 
+                            onClick={() => setIsEditing(true)}
+                            className="text-[10px] font-black uppercase tracking-widest bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full hover:scale-105 transition-transform"
+                          >
+                            Add Email
+                          </button>
                         )}
                       </div>
-                      <p className={`text-sm leading-relaxed ${addr.isPrimary ? 'text-gray-300' : 'text-gray-500'}`}>
-                        {addr.address}, {addr.city}, {addr.state} - {addr.pincode}
-                      </p>
-                      <p className={`text-xs font-bold mt-2 ${addr.isPrimary ? 'text-gray-400' : 'text-gray-400'}`}>{addr.phone}</p>
-                      
-                      {!addr.isPrimary && (
-                        <button 
-                          onClick={() => handleSetPrimary(addr)}
-                          className="mt-4 text-[10px] font-black uppercase tracking-widest underline underline-offset-4 hover:text-black dark:hover:text-white transition-colors"
-                        >
-                          Set as Primary
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex space-x-2">
-                      <button 
-                        onClick={() => handleOpenEdit(addr)}
-                        className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-white/10' : 'hover:bg-white dark:hover:bg-black'}`}
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteAddress(addr)}
-                        className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500'}`}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    )}
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-10 border-2 border-dashed border-gray-100 dark:border-gray-900 rounded-3xl">
-                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No addresses saved yet</p>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Phone Number</label>
+                    <p className="text-lg font-bold">{user.phoneNumber}</p>
+                  </div>
                 </div>
-              )}
-            </div>
-          </section>
+              </section>
+
+              {/* Addresses */}
+              <section className="bg-white dark:bg-gray-950 p-10 rounded-[2.5rem] border border-gray-100 dark:border-gray-900">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-2xl font-black tracking-tighter uppercase">Saved Addresses</h3>
+                  <button 
+                    onClick={handleOpenAdd}
+                    className="flex items-center space-x-2 text-xs font-black uppercase tracking-widest bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-full hover:scale-105 transition-transform"
+                  >
+                    <Plus size={16} />
+                    <span>Add New</span>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {(user.addresses?.length || 0) > 0 ? (
+                    user.addresses?.map(addr => (
+                      <div key={addr.id} className={`p-6 rounded-3xl flex justify-between items-start border-2 transition-all ${addr.isPrimary ? 'bg-black text-white border-black shadow-2xl shadow-black/40 scale-[1.02] ring-4 ring-black/5' : 'bg-gray-50 dark:bg-gray-900 border-transparent'}`}>
+                        <div className="flex-grow">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h4 className="font-bold uppercase tracking-tight">{addr.name}</h4>
+                            {addr.isPrimary && (
+                              <span className="bg-white text-black text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Primary</span>
+                            )}
+                          </div>
+                          <p className={`text-sm leading-relaxed ${addr.isPrimary ? 'text-gray-300' : 'text-gray-500'}`}>
+                            {addr.address}, {addr.city}, {addr.state} - {addr.pincode}
+                          </p>
+                          <p className={`text-xs font-bold mt-2 ${addr.isPrimary ? 'text-gray-400' : 'text-gray-400'}`}>{addr.phone}</p>
+                          
+                          {!addr.isPrimary && (
+                            <button 
+                              onClick={() => handleSetPrimary(addr)}
+                              className="mt-4 text-[10px] font-black uppercase tracking-widest underline underline-offset-4 hover:text-black dark:hover:text-white transition-colors"
+                            >
+                              Set as Primary
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex space-x-2">
+                          <button 
+                            onClick={() => handleOpenEdit(addr)}
+                            className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-white/10' : 'hover:bg-white dark:hover:bg-black'}`}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteAddress(addr)}
+                            className={`p-2 rounded-full transition-colors ${addr.isPrimary ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500'}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-10 border-2 border-dashed border-gray-100 dark:border-gray-900 rounded-3xl">
+                      <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No addresses saved yet</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </>
+          ) : (
+            <WishlistSection user={user} />
+          )}
 
           {/* Add Address Modal */}
           <AnimatePresence>

@@ -153,6 +153,32 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["productId", "userId", "rating", "comment"]
+    },
+    "PriceAlert": {
+      "title": "PriceAlert",
+      "description": "User request to be notified when a product's price drops.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "email": { "type": "string" },
+        "targetPrice": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "email", "targetPrice"]
+    },
+    "WishlistItem": {
+      "title": "WishlistItem",
+      "description": "User's saved products.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "productId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "productId"]
     }
   },
   "firestore": {
@@ -163,6 +189,8 @@
     "/coupons/{couponId}": { "schema": "Coupon", "description": "Discount coupons." },
     "/banners/{bannerId}": { "schema": "Banner", "description": "Homepage banners." },
     "/categories/{categoryId}": { "schema": "Category", "description": "Product categories." },
-    "/reviews/{reviewId}": { "schema": "Review", "description": "Product reviews." }
+    "/reviews/{reviewId}": { "schema": "Review", "description": "Product reviews." },
+    "/priceAlerts/{alertId}": { "schema": "PriceAlert", "description": "Price drop email notifications." },
+    "/wishlists/{wishlistId}": { "schema": "WishlistItem", "description": "Saved products." }
   }
 }

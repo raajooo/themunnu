@@ -4,10 +4,11 @@ import { doc, getDoc, collection, query, where, orderBy, getDocs, addDoc, server
 import { db, auth } from "../firebase";
 import { Product, Review } from "../types";
 import { useCart } from "../hooks/useCart";
+import { useWishlist } from "../hooks/useWishlist";
 import { formatCurrency } from "../lib/utils";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle, Maximize2, X, ArrowRight } from "lucide-react";
+import { ShoppingBag, ChevronLeft, ChevronRight, Star, ShieldCheck, Truck, RotateCcw, MessageSquare, Send, User, MessageCircle, Maximize2, X, ArrowRight, Bell, TrendingDown, Loader2, Heart } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { Helmet } from "react-helmet-async";
@@ -20,6 +21,7 @@ export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const { isWishlisted, toggleWishlist } = useWishlist();
 
   // Synchronous cache check
   const getInitialProduct = () => {
@@ -50,6 +52,50 @@ export default function ProductDetail() {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [error, setError] = useState<Error | null>(null);
+
+  const [isPriceAlertOpen, setIsPriceAlertOpen] = useState(false);
+  const [priceAlertEmail, setPriceAlertEmail] = useState("");
+  const [priceAlertSubmitting, setPriceAlertSubmitting] = useState(false);
+  const [priceAlertSet, setPriceAlertSet] = useState(false);
+
+  useEffect(() => {
+    if (auth.currentUser?.email) {
+      setPriceAlertEmail(auth.currentUser.email);
+    }
+  }, [auth.currentUser]);
+
+  const handlePriceAlertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!priceAlertEmail) {
+      toast.error("Please enter your email");
+      return;
+    }
+    if (!product) return;
+
+    setPriceAlertSubmitting(true);
+    try {
+      await addDoc(collection(db, "priceAlerts"), {
+        productId: product.id,
+        productName: product.name,
+        email: priceAlertEmail.trim().toLowerCase(),
+        targetPrice: product.price,
+        createdAt: new Date().toISOString()
+      });
+      toast.success("Price drop alert set successfully!");
+      setPriceAlertSet(true);
+      setIsPriceAlertOpen(false);
+    } catch (err: any) {
+      console.error("Error setting price alert:", err);
+      toast.error("Failed to set alert. Please try again.");
+      try {
+        handleFirestoreError(err, OperationType.CREATE, "priceAlerts");
+      } catch (e) {
+        // Handled
+      }
+    } finally {
+      setPriceAlertSubmitting(false);
+    }
+  };
 
   if (error) {
     throw error;
@@ -524,12 +570,96 @@ export default function ProductDetail() {
             </button>
             
             <button 
+              onClick={() => {
+                if (product) {
+                  toggleWishlist(product.id);
+                }
+              }}
+              className={`w-full py-5 font-black text-sm uppercase tracking-[0.2em] rounded-full transition-all flex items-center justify-center border-2 ${
+                product && isWishlisted(product.id)
+                  ? "bg-red-50 border-red-200 text-red-600 dark:bg-red-950/20 dark:border-red-900/30 dark:text-red-400"
+                  : "bg-transparent border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-500"
+              }`}
+            >
+              <Heart className="mr-3" size={20} fill={product && isWishlisted(product.id) ? "currentColor" : "none"} />
+              {product && isWishlisted(product.id) ? "In Wishlist" : "Add to Wishlist"}
+            </button>
+            
+            <button 
               onClick={() => window.dispatchEvent(new CustomEvent('open-chatbot'))}
               className="w-full py-5 bg-gray-100 dark:bg-gray-900 text-black dark:text-white font-black text-sm uppercase tracking-[0.2em] rounded-full hover:opacity-80 transition-all flex items-center justify-center"
             >
               <MessageCircle className="mr-3" size={20} />
               Ask About This Product
             </button>
+
+            {/* Email me when price drops */}
+            <div className="border border-gray-200 dark:border-gray-800 rounded-2xl p-4 bg-gray-50/50 dark:bg-gray-900/50">
+              {priceAlertSet ? (
+                <div className="flex items-center space-x-3 text-green-600 dark:text-green-400 justify-center">
+                  <Bell size={20} className="animate-bounce" />
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    We'll email you when the price drops!
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  {!isPriceAlertOpen ? (
+                    <button
+                      onClick={() => setIsPriceAlertOpen(true)}
+                      className="w-full py-2.5 px-4 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 hover:border-gray-500 dark:hover:border-gray-500 hover:text-black dark:hover:text-white transition-all flex items-center justify-center space-x-2"
+                    >
+                      <TrendingDown size={14} />
+                      <span>Email me when price drops</span>
+                    </button>
+                  ) : (
+                    <motion.form 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onSubmit={handlePriceAlertSubmit}
+                      className="space-y-3"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                          Set Price Drop Alert
+                        </span>
+                        <button 
+                          type="button" 
+                          onClick={() => setIsPriceAlertOpen(false)}
+                          className="text-gray-400 hover:text-black dark:hover:text-white"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Get notified instantly if the price falls below the current price of {formatCurrency(product.price)}.
+                      </p>
+                      <div className="flex space-x-2">
+                        <input
+                          type="email"
+                          required
+                          value={priceAlertEmail}
+                          onChange={(e) => setPriceAlertEmail(e.target.value)}
+                          placeholder="your.email@example.com"
+                          className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-800 rounded-xl text-sm bg-white dark:bg-black focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                        />
+                        <button
+                          type="submit"
+                          disabled={priceAlertSubmitting}
+                          className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-xs font-bold uppercase tracking-wider rounded-xl hover:opacity-90 transition-opacity flex items-center space-x-1"
+                        >
+                          {priceAlertSubmitting ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <span>Set Alert</span>
+                          )}
+                        </button>
+                      </div>
+                    </motion.form>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 pt-10 border-t border-gray-100 dark:border-gray-900">

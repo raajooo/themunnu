@@ -18,6 +18,7 @@ export default function ForgotPassword() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [devOtp, setDevOtp] = useState("");
 
   const navigate = useNavigate();
 
@@ -52,9 +53,15 @@ export default function ForgotPassword() {
       if (response.ok && data.success) {
         setOtpToken(data.otpToken);
         setFormData(prev => ({ ...prev, phoneNumber: data.phoneNumber }));
+        if (data.devOtp) {
+          setDevOtp(data.devOtp);
+          toast.success("Sandbox Mode: Use code " + data.devOtp, { duration: 8000 });
+        } else {
+          setDevOtp("");
+          toast.success("Verification code sent to your email!");
+        }
         setStep("otp");
         setResendTimer(60);
-        toast.success("Verification code sent to your email!");
       } else {
         toast.error(data.error || "Failed to send OTP. Please check your email.");
       }
@@ -168,6 +175,17 @@ export default function ForgotPassword() {
                   OTP sent to {formData.phoneNumber}
                 </p>
               </div>
+
+              {devOtp && (
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-2xl p-4 text-center">
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-widest mb-1">
+                    ⚠️ SMTP Service Not Configured
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Use testing code: <span className="font-black text-sm tracking-widest">{devOtp}</span>
+                  </p>
+                </div>
+              )}
               <div className="relative">
                 <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input 

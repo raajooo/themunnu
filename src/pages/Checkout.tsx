@@ -299,7 +299,14 @@ export default function Checkout({ user }: CheckoutProps) {
         });
         const orderData = await orderRes.json();
 
-        if (!orderRes.ok) throw new Error(orderData.details || orderData.error || "Failed to create payment order");
+        if (!orderRes.ok || !orderData || !orderData.order) {
+          throw new Error(orderData?.details || orderData?.error || "Failed to create payment order. Invalid server response.");
+        }
+
+        // Verify Razorpay library is loaded before initializing
+        if (typeof window.Razorpay === "undefined") {
+          throw new Error("Razorpay payment gateway is not loaded. Please disable your ad-blocker or check your internet connection.");
+        }
 
         // 2. Open Razorpay Checkout
         const options: any = {
@@ -603,10 +610,10 @@ export default function Checkout({ user }: CheckoutProps) {
           <div className="flex items-center space-x-4">
             <button 
               onClick={() => {
-                if (window.history.length > 1) {
-                  navigate(-1);
+                if (directPurchase?.productId) {
+                  navigate(`/product/${directPurchase.productId}`);
                 } else {
-                  navigate("/");
+                  navigate("/cart");
                 }
               }} 
               className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"

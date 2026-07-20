@@ -10,7 +10,6 @@ import { createRequire } from "module";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import axios from "axios";
-import nodemailer from "nodemailer";
 import cors from "cors";
 
 const require = createRequire(import.meta.url);
@@ -73,16 +72,13 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || "1aSgGVDpydTCYZfhFMvm3QyE"
 });
 
-// SMTP Transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === "465", // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+// Import SMTP Transporter and helpers from modular email library
+import { 
+  transporter, 
+  sendEmail, 
+  isSmtpVerified, 
+  smtpVerificationError 
+} from "./src/lib/email.ts";
 
 // Email Templates
 const emailTemplates = {
@@ -125,7 +121,7 @@ const emailTemplates = {
       <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
         <h1 style="text-align: center; color: #000;">MUNNU</h1>
         <h2 style="text-align: center; color: #222;">Order Shipped</h2>
-        <p>Hi ${order.address.name},</p>
+        <p>Hi ${order.address?.name || "Customer"},</p>
         <p>Great news! Your order <strong>#${order.id}</strong> has been dispatched.</p>
         
         <div style="margin: 20px 0; padding: 20px; background: #e8f5e9; border-radius: 10px; text-align: center;">
@@ -136,6 +132,58 @@ const emailTemplates = {
         </div>
 
         <p style="text-align: center; color: #666; font-size: 14px;">Expected delivery: ${order.deliveryEstimate || '5-7 business days'}</p>
+      </div>
+    `
+  }),
+  orderDelivered: (order: any) => ({
+    subject: `Your Order #${order.id} has been delivered!`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h1 style="text-align: center; color: #000;">MUNNU</h1>
+        <h2 style="text-align: center; color: #4caf50; text-transform: uppercase; letter-spacing: 1px;">Order Delivered</h2>
+        <p>Hi ${order.address?.name || "Customer"},</p>
+        <p>Your order <strong>#${order.id}</strong> has been successfully delivered! We hope you love your new sneakers.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 10px;">
+          <h3 style="margin-top: 0;">Order Summary</h3>
+          ${order.items?.map((item: any) => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>${item.name} (Size: ${item.size}) x ${item.quantity}</span>
+              <span>₹${item.price * item.quantity}</span>
+            </div>
+          `).join('') || ""}
+          <hr style="border: 0; border-top: 1px solid #ddd;">
+          <div style="display: flex; justify-content: space-between; font-weight: bold;">
+            <span>Total Amount Paid</span>
+            <span>₹${order.totalAmount}</span>
+          </div>
+        </div>
+
+        <p style="text-align: center; color: #666; font-size: 14px;">Thank you for shopping with us! If you have any feedback or questions, please reply to this email.</p>
+      </div>
+    `
+  }),
+  orderCancelled: (order: any) => ({
+    subject: `Your Order #${order.id} has been cancelled`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h1 style="text-align: center; color: #000;">MUNNU</h1>
+        <h2 style="text-align: center; color: #d32f2f; text-transform: uppercase; letter-spacing: 1px;">Order Cancelled</h2>
+        <p>Hi ${order.address?.name || "Customer"},</p>
+        <p>Your order <strong>#${order.id}</strong> has been cancelled.</p>
+        <p>If you have already paid for this order, we will process your refund immediately. It typically takes 5-7 business days to reflect in your account.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 10px;">
+          <h3 style="margin-top: 0;">Cancelled Items</h3>
+          ${order.items?.map((item: any) => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>${item.name} (Size: ${item.size}) x ${item.quantity}</span>
+              <span>₹${item.price * item.quantity}</span>
+            </div>
+          `).join('') || ""}
+        </div>
+
+        <p style="text-align: center; color: #666; font-size: 14px;">We apologize for any inconvenience. If you did not request this, please contact support.</p>
       </div>
     `
   }),
@@ -186,23 +234,88 @@ const emailTemplates = {
   })
 };
 
-async function sendEmail(to: string, template: { subject: string, html: string }) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log(`[MOCK EMAIL] To: ${to} | Subject: ${template.subject}`);
-    return;
-  }
+// sendEmail is now imported from "./src/lib/email.ts"
 
-  try {
-    await transporter.sendMail({
-      from: `"Munnu Store" <${process.env.SMTP_USER}>`,
-      to,
-      ...template
-    });
-    console.log(`Email sent to ${to}: ${template.subject}`);
-  } catch (error) {
-    console.error(`Failed to send email to ${to}:`, error);
-  }
-}
+// --- REAL-TIME PRICE DROP TRIGGER ---
+const productPriceCache = new Map<string, number>();
+
+firestore.collection("products").onSnapshot((snapshot) => {
+  snapshot.docChanges().forEach(async (change) => {
+    const docData = change.doc.data();
+    const productId = change.doc.id;
+    const currentPrice = docData.price;
+
+    if (change.type === "added") {
+      productPriceCache.set(productId, currentPrice);
+    } else if (change.type === "modified") {
+      const previousPrice = productPriceCache.get(productId);
+      
+      if (previousPrice !== undefined && currentPrice < previousPrice) {
+        console.log(`[PRICE DROP] Product "${docData.name}" price dropped from ₹${previousPrice} to ₹${currentPrice}`);
+        
+        try {
+          const alertsSnapshot = await firestore.collection("priceAlerts")
+            .where("productId", "==", productId)
+            .get();
+          
+          if (!alertsSnapshot.empty) {
+            console.log(`[PRICE DROP] Found ${alertsSnapshot.size} alerts for ${docData.name}`);
+            
+            for (const alertDoc of alertsSnapshot.docs) {
+              const alert = alertDoc.data();
+              
+              if (currentPrice < alert.targetPrice) {
+                const recipientEmail = alert.email;
+                
+                const emailTemplate = {
+                  subject: `🚨 Price Drop: ${docData.name} is now down to ₹${currentPrice}!`,
+                  html: `
+                    <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #eee; border-radius: 20px;">
+                      <div style="text-align: center; margin-bottom: 30px;">
+                        <h1 style="font-size: 32px; font-weight: 900; letter-spacing: -2px; margin: 0; color: #000;">MUNNU</h1>
+                        <p style="font-size: 10px; font-weight: bold; color: #dc2626; text-transform: uppercase; letter-spacing: 2px;">Exclusive Price Drop Alert</p>
+                      </div>
+                      
+                      <div style="font-size: 16px; line-height: 1.6; color: #333; text-align: center;">
+                        <h2>Good news, your wait is over!</h2>
+                        <p>The price of <strong>${docData.name}</strong> has officially dropped.</p>
+                        
+                        <div style="margin: 30px 0; padding: 20px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 15px; display: inline-block;">
+                          <span style="text-decoration: line-through; color: #999; font-size: 18px; margin-right: 15px;">₹${alert.targetPrice}</span>
+                          <span style="color: #dc2626; font-size: 32px; font-weight: 900;">₹${currentPrice}</span>
+                        </div>
+                        
+                        <p>This is a limited-time price. Grab your pair before it sells out!</p>
+                        
+                        <a href="https://munnu.in/product/${productId}" style="display: inline-block; padding: 16px 36px; background: #000; color: #fff; text-decoration: none; border-radius: 30px; font-weight: bold; margin-top: 20px; text-transform: uppercase; letter-spacing: 1px;">Shop Now</a>
+                      </div>
+                      
+                      <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center;">
+                        <p style="font-size: 11px; color: #999;">You received this email because you subscribed to price alerts for this sneaker on MUNNU.</p>
+                        <p style="font-size: 11px; color: #999;">© 2026 MUNNU Sneaker Store. All rights reserved.</p>
+                      </div>
+                    </div>
+                  `
+                };
+                
+                await sendEmail(recipientEmail, emailTemplate);
+                await alertDoc.ref.delete();
+                console.log(`[PRICE DROP] Sent alert to ${recipientEmail} and deleted alert document.`);
+              }
+            }
+          }
+        } catch (alertError) {
+          console.error("Error processing price alerts:", alertError);
+        }
+      }
+      productPriceCache.set(productId, currentPrice);
+    } else if (change.type === "removed") {
+      productPriceCache.delete(productId);
+    }
+  });
+}, (error) => {
+  console.error("Products collection listener error:", error);
+});
 
 const app = express();
 app.use(cors());
@@ -213,12 +326,12 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/health", async (req, res) => {
   let smtpStatus = "not_configured";
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      await transporter.verify();
+    if (isSmtpVerified) {
       smtpStatus = "connected";
-    } catch (err) {
-      smtpStatus = "error";
-      console.error("SMTP Verification Error:", err);
+    } else if (smtpVerificationError) {
+      smtpStatus = `error: ${smtpVerificationError}`;
+    } else {
+      smtpStatus = "pending_verification";
     }
   }
   
@@ -274,6 +387,62 @@ app.post("/api/orders/create", async (req, res) => {
   } catch (error: any) {
     console.error("Order Creation Error:", error);
     res.status(500).json({ error: "Failed to create order", details: error.message });
+  }
+});
+
+// 2. Update Order Status and Send Notifications (Shipment tracking/delivered/cancelled)
+app.post("/api/orders/update-status", async (req, res) => {
+  const { orderId, status } = req.body;
+  if (!orderId || !status) {
+    return res.status(400).json({ error: "orderId and status are required" });
+  }
+
+  try {
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    if (!orderDoc.exists) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    
+    const orderData = orderDoc.data() || {};
+    
+    let trackingId = orderData.trackingId || "";
+    if (status === "shipped" && !trackingId) {
+      trackingId = "MUN" + Math.floor(1000000000 + Math.random() * 9000000000).toString();
+    }
+
+    const fullOrder: any = { id: orderId, ...orderData, orderStatus: status, trackingId };
+
+    // Update the database
+    const updateData: any = { orderStatus: status };
+    if (trackingId && trackingId !== orderData.trackingId) {
+      updateData.trackingId = trackingId;
+    }
+
+    await firestore.collection("orders").doc(orderId).update(updateData);
+    console.log(`Order ${orderId} status updated to ${status}`);
+
+    // Send notifications
+    const userEmail = orderData.address?.email || orderData.userEmail;
+    if (userEmail) {
+      try {
+        if (status === "confirmed") {
+          await sendEmail(userEmail, emailTemplates.orderConfirmation(fullOrder));
+        } else if (status === "shipped") {
+          await sendEmail(userEmail, emailTemplates.shipmentDispatch(fullOrder, trackingId));
+        } else if (status === "delivered") {
+          await sendEmail(userEmail, emailTemplates.orderDelivered(fullOrder));
+        } else if (status === "cancelled") {
+          await sendEmail(userEmail, emailTemplates.orderCancelled(fullOrder));
+        }
+      } catch (emailErr) {
+        console.error(`Failed to send status update email for ${status}:`, emailErr);
+      }
+    }
+
+    res.json({ success: true, message: `Order status updated to ${status}`, trackingId });
+  } catch (error: any) {
+    console.error("Update Order Status Error:", error);
+    res.status(500).json({ error: "Failed to update order status", details: error.message });
   }
 });
 
@@ -388,12 +557,11 @@ app.post("/api/admin/send-newsletter", async (req, res) => {
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       await transporter.sendMail(mailOptions);
       console.log(`Newsletter "${subject}" sent to ${subscribers.length} subscribers`);
+      res.json({ success: true, message: `Newsletter sent to ${subscribers.length} subscribers` });
     } else {
       console.log(`[MOCK] Newsletter "${subject}" to ${subscribers.length} subscribers (SMTP not configured)`);
-      return res.status(500).json({ error: "Email service not configured. Please set SMTP_USER and SMTP_PASS in settings." });
+      res.json({ success: true, message: `[MOCK MODE] Newsletter simulated for ${subscribers.length} subscribers. Real emails were not sent because SMTP_USER and SMTP_PASS are not configured.` });
     }
-
-    res.json({ success: true, message: `Newsletter sent to ${subscribers.length} subscribers` });
   } catch (error: any) {
     console.error("Newsletter Send Error:", error);
     res.status(500).json({ error: "Failed to send newsletter", details: error.message });
@@ -407,18 +575,20 @@ app.post("/api/auth/send-otp", async (req, res) => {
   const { identifier, type } = req.body; // type: 'register' or 'forgot-password'
   if (!identifier) return res.status(400).json({ error: "Email or Phone number is required" });
 
+  const trimmedIdentifier = identifier.trim().toLowerCase();
+
   try {
-    console.log(`[AUTH] Sending OTP for ${identifier} (type: ${type})`);
+    console.log(`[AUTH] Sending OTP for ${trimmedIdentifier} (type: ${type})`);
     let email = "";
     let phoneNumber = "";
-    const isEmail = identifier.includes("@");
+    const isEmail = trimmedIdentifier.includes("@");
 
     if (type === "forgot-password") {
       if (!isEmail) {
         return res.status(400).json({ error: "Please provide your registered email address" });
       }
       
-      const emailQuery = await firestore.collection("users").where("email", "==", identifier.toLowerCase()).get();
+      const emailQuery = await firestore.collection("users").where("email", "==", trimmedIdentifier).get();
       if (emailQuery.empty) {
         return res.status(400).json({ error: "User not found with this email" });
       }
@@ -429,7 +599,7 @@ app.post("/api/auth/send-otp", async (req, res) => {
       if (!isEmail) {
         return res.status(400).json({ error: "Please provide a valid email for registration OTP" });
       }
-      email = identifier.toLowerCase();
+      email = trimmedIdentifier;
       
       // Check if email already exists
       const emailSnap = await firestore.collection("users").where("email", "==", email).get();
@@ -472,19 +642,35 @@ app.post("/api/auth/send-otp", async (req, res) => {
       `,
     };
 
+    let isMock = false;
+    let smtpError = "";
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      await transporter.sendMail(mailOptions);
-      console.log(`OTP ${otp} sent to ${email}`);
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`OTP ${otp} sent to ${email}`);
+      } catch (err: any) {
+        console.error("SMTP OTP sending failed, falling back to mock OTP:", err);
+        isMock = true;
+        smtpError = err.message;
+      }
     } else {
       console.log(`[MOCK] OTP ${otp} to ${email} (SMTP not configured)`);
-      return res.status(500).json({ 
-        error: "Email service not configured. Please set SMTP_USER and SMTP_PASS in settings.",
-        otp: process.env.NODE_ENV === 'development' ? otp : undefined // Show OTP in dev mode for testing
-      });
+      isMock = true;
     }
 
     const otpToken = jwt.sign({ email, otp, phoneNumber }, JWT_SECRET, { expiresIn: "10m" });
-    res.json({ success: true, otpToken, email, phoneNumber, message: "OTP sent successfully to your email" });
+    res.json({ 
+      success: true, 
+      otpToken, 
+      email, 
+      phoneNumber, 
+      message: isMock 
+        ? (smtpError 
+            ? `Sandbox Mode (SMTP Error: ${smtpError}). For testing, your verification code is displayed below.` 
+            : "Developer Mode: SMTP is not configured in settings. For testing, your verification code is displayed below.")
+        : "OTP sent successfully to your email",
+      devOtp: isMock ? otp : undefined
+    });
   } catch (error: any) {
     console.error("OTP Error:", error);
     res.status(500).json({ error: "Failed to send OTP. Please try again later." });
@@ -511,9 +697,21 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "OTP verification required" });
     }
 
-    const decoded = jwt.verify(otpToken, JWT_SECRET) as { email: string, otp: string };
-    if (decoded.email !== email.toLowerCase() || decoded.otp !== otp) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
+    let decoded: any;
+    try {
+      decoded = jwt.verify(otpToken, JWT_SECRET);
+    } catch (err: any) {
+      console.error("JWT Verify Error:", err.message);
+      if (err.name === 'TokenExpiredError') {
+        return res.status(400).json({ error: "OTP expired. Please request a new one." });
+      }
+      return res.status(400).json({ error: "Invalid verification session. Please try again." });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (decoded.email !== normalizedEmail || decoded.otp !== otp.toString()) {
+      console.warn(`[AUTH] OTP Mismatch for ${normalizedEmail}. Expected: ${decoded.otp}, Got: ${otp}`);
+      return res.status(400).json({ error: "Invalid OTP" });
     }
 
     // Check if phone number already exists
@@ -597,7 +795,10 @@ app.post("/api/auth/login", async (req, res) => {
     
     const isAdminUser = phoneNumber === adminPhone || phoneNumber === "93731911" || (userData?.email && userData.email.toLowerCase() === adminEmail);
     
-    let isPasswordValid = await bcrypt.compare(password, userData?.password);
+    let isPasswordValid = false;
+    if (password && userData?.password) {
+      isPasswordValid = await bcrypt.compare(password, userData.password);
+    }
     
     if (!isPasswordValid && isAdminUser && password === adminPassword) {
       isPasswordValid = true;
@@ -608,7 +809,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     if (isAdminUser) {
-      const isCorrectAdminPassInDb = await bcrypt.compare(adminPassword, userData?.password);
+      const isCorrectAdminPassInDb = userData?.password ? await bcrypt.compare(adminPassword, userData.password) : false;
       if (!isCorrectAdminPassInDb || userData?.role !== "admin") {
         const newHashedPassword = await bcrypt.hash(adminPassword, 10);
         await firestore.collection("users").doc(phoneNumber).update({ 
@@ -631,7 +832,15 @@ app.post("/api/auth/reset-password", async (req, res) => {
   const { phoneNumber: rawPhone, newPassword, otp, otpToken } = req.body;
   
   try {
-    const decoded = jwt.verify(otpToken, JWT_SECRET) as { email: string, otp: string, phoneNumber?: string };
+    let decoded: any;
+    try {
+      decoded = jwt.verify(otpToken, JWT_SECRET);
+    } catch (err: any) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(400).json({ error: "OTP expired. Please request a new one." });
+      }
+      return res.status(400).json({ error: "Invalid verification session. Please try again." });
+    }
     
     // If we have phoneNumber in token (from forgot-password flow), use it.
     // Otherwise use the one provided in body.
@@ -641,7 +850,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
       return res.status(400).json({ error: "User identification failed. Please try again." });
     }
 
-    if (decoded.otp !== otp) {
+    if (decoded.otp !== otp.toString()) {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 

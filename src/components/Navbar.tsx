@@ -1,5 +1,5 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { ShoppingCart, User as UserIcon, Search, Menu, X, ArrowRight, ChevronLeft } from "lucide-react";
+import { ShoppingCart, User as UserIcon, Search, Menu, X, ArrowRight, ChevronLeft, Heart } from "lucide-react";
 import React, { useState, useEffect, useRef } from "react";
 import { User, Product } from "../types";
 import { motion, AnimatePresence } from "motion/react";
@@ -237,6 +237,9 @@ export default React.memo(function Navbar({ user }: NavbarProps) {
             <Link to="/cart" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors relative">
               <ShoppingCart size={20} />
             </Link>
+            <Link to={user ? "/profile?tab=wishlist" : "/login"} state={{ from: "/profile?tab=wishlist" }} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-900 rounded-full transition-colors relative">
+              <Heart size={20} />
+            </Link>
             <Link 
               to={user ? "/profile" : "/login"} 
               state={{ from: location.pathname }} 
@@ -354,6 +357,7 @@ export default React.memo(function Navbar({ user }: NavbarProps) {
                     <Link to="/shop?category=trending" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>TRENDING</Link>
                     <Link to="/shop?category=limited" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>LIMITED</Link>
                     <Link to="/orders" className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>MY ORDERS</Link>
+                    <Link to={user ? "/profile?tab=wishlist" : "/login"} state={{ from: "/profile?tab=wishlist" }} className="block text-lg font-bold" onClick={() => setIsMobileMenuOpen(false)}>MY WISHLIST</Link>
                   </div>
                 )}
               </motion.div>

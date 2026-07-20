@@ -150,11 +150,20 @@ export default function AdminOrders() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      await updateDoc(doc(db, "orders", id), { orderStatus: status });
-      toast.success(`Order marked as ${status}`);
-      fetchOrders();
-    } catch (error) {
-      toast.error("Failed to update status");
+      const response = await fetch("/api/orders/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: id, status })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success(data.message || `Order marked as ${status}`);
+        fetchOrders();
+      } else {
+        throw new Error(data.error || "Failed to update status");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update status");
     }
   };
 

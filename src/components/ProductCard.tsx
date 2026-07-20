@@ -6,6 +6,7 @@ import { formatCurrency } from "../lib/utils";
 import { ShoppingCart, Heart, Star, Share2, Tag } from "lucide-react";
 import LazyImage from "./LazyImage";
 import { toast } from "react-hot-toast";
+import { useWishlist } from "../hooks/useWishlist";
 
 interface ProductCardProps {
   product: Product;
@@ -14,12 +15,41 @@ interface ProductCardProps {
 }
 
 export default React.memo(function ProductCard({ product, hasCoupon }: ProductCardProps) {
-  const handleShare = (e: React.MouseEvent) => {
+  const { isWishlisted, toggleWishlist } = useWishlist();
+  const isWish = isWishlisted(product.id);
+
+  const handleWishlistToggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleWishlist(product.id);
+  };
+
+  const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const url = `${window.location.origin}/product/${product.id}`;
-    navigator.clipboard.writeText(url);
-    toast.success("Link copied to clipboard!");
+    const title = `Check out this ${product.name} on Munnu!`;
+    const text = `I found this amazing ${product.name} from ${product.brand}. You should check it out!`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          text,
+          url,
+        });
+      } catch (err) {
+        console.error("Error sharing:", err);
+      }
+    } else {
+      // Fallback: Copy to clipboard and show social options
+      navigator.clipboard.writeText(url);
+      toast.success("Link copied! Share it with your friends.");
+      
+      // Open WhatsApp as a quick social share fallback
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text + " " + url)}`;
+      window.open(whatsappUrl, '_blank');
+    }
   };
 
   return (
@@ -50,6 +80,16 @@ export default React.memo(function ProductCard({ product, hasCoupon }: ProductCa
             <span className="text-[10px] font-black">{product.averageRating.toFixed(1)}</span>
           </div>
         )}
+        {product.stock <= 5 && product.stock > 0 && (
+          <div className="absolute bottom-4 left-4 bg-red-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md">
+            Low Stock ({product.stock})
+          </div>
+        )}
+        {product.stock === 0 && (
+          <div className="absolute bottom-4 left-4 bg-gray-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md">
+            Out Of Stock
+          </div>
+        )}
       </Link>
 
       <div className="p-5">
@@ -58,16 +98,24 @@ export default React.memo(function ProductCard({ product, hasCoupon }: ProductCa
             {product.brand}
           </span>
           <div className="flex items-center space-x-2">
-            <button 
+            <motion.button 
+              whileHover={{ scale: 1.2 }}
+              whileTap={{ scale: 0.9 }}
               onClick={handleShare}
               className="text-gray-300 hover:text-black dark:hover:text-white transition-colors p-1"
-              title="Share"
+              title="Share on Social Media"
             >
               <Share2 size={16} />
-            </button>
-            <button className="text-gray-300 hover:text-red-500 transition-colors p-1">
-              <Heart size={16} />
-            </button>
+            </motion.button>
+            <motion.button 
+              whileHover={{ scale: 1.2 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleWishlistToggle}
+              className={`transition-colors p-1 ${isWish ? "text-red-500 hover:text-red-600" : "text-gray-300 hover:text-red-500"}`}
+              title={isWish ? "Remove from Wishlist" : "Add to Wishlist"}
+            >
+              <Heart size={16} fill={isWish ? "currentColor" : "none"} />
+            </motion.button>
           </div>
         </div>
         

@@ -23,6 +23,7 @@ export default function Register({ user }: RegisterProps) {
   const [honeypot, setHoneypot] = useState(""); // Bot protection
   const [otpToken, setOtpToken] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
+  const [devOtp, setDevOtp] = useState("");
   const [formData, setFormData] = useState({
     phoneNumber: "",
     fullName: "",
@@ -102,9 +103,15 @@ export default function Register({ user }: RegisterProps) {
       }
 
       setOtpToken(data.otpToken);
+      if (data.devOtp) {
+        setDevOtp(data.devOtp);
+        toast.success("Sandbox Mode: Use code " + data.devOtp, { id: otpToast, duration: 8000 });
+      } else {
+        setDevOtp("");
+        toast.success("Verification code sent to your email!", { id: otpToast });
+      }
       setStep("otp");
       setResendTimer(60);
-      toast.success("Verification code sent to your email!", { id: otpToast });
     } catch (error: any) {
       console.error("OTP Error:", error);
       toast.error(error.message || "Failed to send verification code.", { id: otpToast });
@@ -293,6 +300,17 @@ export default function Register({ user }: RegisterProps) {
                   Verification code sent to {formData.email}
                 </p>
               </div>
+
+              {devOtp && (
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-2xl p-4 text-center">
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-widest mb-1">
+                    ⚠️ SMTP Service Not Configured
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Use testing code: <span className="font-black text-sm tracking-widest">{devOtp}</span>
+                  </p>
+                </div>
+              )}
               <div className="relative">
                 <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input 
